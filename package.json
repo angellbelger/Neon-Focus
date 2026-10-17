@@ -1,0 +1,83 @@
+{
+  "name": "neon-pomodoro",
+  "version": "1.0.0",
+  "description": "A neon Pomodoro timer and productivity tracker with SQLite history and charts.",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:fast": "node scripts/start-fast.js",
+    "test": "node --test \"test/unit/**/*.test.js\"",
+    "test:e2e": "node test/e2e/run-e2e.js",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux",
+    "demo": "node scripts/demo.js"
+  },
+  "keywords": [],
+  "author": "Angell Belger",
+  "license": "MIT",
+  "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.1.1",
+    "@fontsource/space-grotesk": "^5.1.0",
+    "chart.js": "^4.4.6",
+    "sql.js": "^1.12.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.2",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "productName": "Neon Pomodoro",
+  "build": {
+    "appId": "com.belger.neonpomodoro",
+    "productName": "Neon Pomodoro",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**",
+      "core/**",
+      "src/**",
+      "assets/**",
+      "package.json",
+      "node_modules/sql.js/dist/sql-wasm.js",
+      "node_modules/sql.js/dist/sql-wasm.wasm",
+      "node_modules/sql.js/package.json",
+      "node_modules/chart.js/dist/chart.umd.js",
+      "node_modules/chart.js/package.json",
+      "node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-*-normal.woff2",
+      "node_modules/@fontsource/space-grotesk/files/space-grotesk-latin-*-normal.woff2"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/icons/icon.png",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "assets/icons/icon.png",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "icon": "assets/icons/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

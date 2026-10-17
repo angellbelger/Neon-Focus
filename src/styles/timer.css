@@ -1,0 +1,193 @@
+/* ================================================================ Focus page
+   The dial is the one loud element in the app: a ring of 60 light "tubes"
+   that switch off one by one as the session runs down. Everything around
+   it stays quiet. */
+
+.page--focus {
+  min-height: 100%;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 22px;
+  padding-top: 28px;
+}
+
+/* mode switch: plain text tabs with an underline of light */
+.mode-switch { display: flex; gap: 6px; }
+.mode-switch button {
+  position: relative;
+  border: 0; background: transparent;
+  padding: 8px 14px;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  transition: color var(--t-fast);
+}
+.mode-switch button::after {
+  content: ''; position: absolute; left: 14px; right: 14px; bottom: 2px; height: 2px;
+  border-radius: 2px; background: currentColor; transform: scaleX(0);
+  transition: transform var(--t-med) var(--ease);
+}
+.mode-switch button:hover:not(:disabled) { color: var(--text); }
+.mode-switch button[aria-checked='true'] { color: var(--mode); }
+.mode-switch button[aria-checked='true']::after { transform: scaleX(1); box-shadow: 0 0 calc(10px * var(--glow)) var(--mode); }
+.mode-switch button:disabled { opacity: 1; color: var(--text-3); cursor: default; }
+.mode-switch button[aria-checked='true']:disabled { color: var(--mode); }
+
+/* banner for completions / restored sessions */
+.banner {
+  display: flex; align-items: center; gap: 14px;
+  max-width: 640px; width: 100%;
+  padding: 10px 10px 10px 18px;
+  border-radius: var(--r-pill);
+  border: 1px solid color-mix(in srgb, var(--mode) 35%, transparent);
+  background: color-mix(in srgb, var(--mode) 8%, rgba(5, 6, 11, 0.6));
+  animation: banner-in var(--t-med) var(--ease);
+}
+.banner[data-kind='warning'] { border-color: color-mix(in srgb, var(--amber) 45%, transparent); background: color-mix(in srgb, var(--amber) 8%, rgba(5, 6, 11, 0.6)); }
+.banner__text { flex: 1; font-size: var(--fs-sm); }
+.banner .btn--accent { background: var(--mode); border-color: var(--mode); box-shadow: 0 0 calc(16px * var(--glow)) color-mix(in srgb, var(--mode) 40%, transparent); }
+.banner__close { border: 0; background: transparent; color: var(--text-3); padding: 6px; border-radius: 50%; }
+.banner__close:hover { color: var(--text); }
+.banner__close svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+@keyframes banner-in { from { opacity: 0; transform: translateY(-6px); } }
+
+/* ---------------------------------------------------------------- dial */
+.dial {
+  position: relative;
+  width: min(440px, 78vw, 54vh);
+  aspect-ratio: 1;
+  flex: none;
+}
+.dial__svg { width: 100%; height: 100%; overflow: visible; }
+
+.dial__track { fill: none; stroke: rgba(255, 255, 255, 0.04); stroke-width: 1; }
+.dial__arc {
+  fill: none; stroke: var(--mode); stroke-width: 1.5; stroke-linecap: round;
+  transform: rotate(-90deg); transform-origin: 200px 200px;
+  opacity: 0.55;
+  transition: stroke var(--t-med);
+}
+
+.tick {
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: stroke var(--t-med) var(--ease), opacity var(--t-med);
+}
+.tick--major { stroke-width: 5; }
+.tick.is-lit { stroke: var(--mode); }
+#dial-ticks.is-glowing .tick.is-lit { filter: url(#tube-glow); opacity: calc(0.75 + var(--glow) * 0.25); }
+.tick.is-head { stroke: color-mix(in srgb, var(--mode) 50%, white); }
+
+/* breathing light on the head tube while running */
+body[data-status='running'] .tick.is-head { animation: head-breathe 2.4s ease-in-out infinite; }
+@keyframes head-breathe { 50% { opacity: 0.55; } }
+
+.dial__face {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px;
+  text-align: center;
+}
+.dial__mode { color: var(--mode); font-size: var(--fs-md); letter-spacing: 0.02em; transition: color var(--t-med); }
+.dial__time {
+  font-family: var(--font-mono);
+  font-weight: 200;
+  font-size: clamp(3.5rem, min(13vw, 9.5vh), 7.5rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  color: #f4f8ff;
+  text-shadow: 0 0 calc(24px * var(--glow)) color-mix(in srgb, var(--mode) 55%, transparent);
+  margin: 6px 0 4px;
+}
+body[data-status='paused'] .dial__time { animation: paused-blink 1.6s steps(1) infinite; }
+@keyframes paused-blink { 50% { opacity: 0.45; } }
+.dial__state { color: var(--text-3); font-size: var(--fs-sm); min-height: 1.5em; }
+
+.cycle { list-style: none; padding: 0; margin: 12px 0 0; display: flex; gap: 6px; }
+.cycle li {
+  width: 8px; height: 8px; border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.12);
+  transition: width var(--t-med) var(--ease), background var(--t-med);
+}
+.cycle li.is-done { background: var(--focus); box-shadow: 0 0 calc(8px * var(--glow)) var(--focus); }
+.cycle li.is-current { width: 22px; background: color-mix(in srgb, var(--focus) 45%, transparent); }
+
+/* ---------------------------------------------------------------- controls */
+.controls { display: flex; align-items: center; gap: 22px; }
+
+.ctrl {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--text-2);
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), box-shadow var(--t-fast), transform var(--t-fast);
+}
+.ctrl svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.ctrl--side { width: 52px; height: 52px; border-radius: 50%; }
+.ctrl--side:hover:not(:disabled) { color: var(--text); border-color: color-mix(in srgb, var(--mode) 50%, transparent); }
+
+.ctrl--main {
+  min-width: 168px; height: 60px; padding: 0 30px;
+  border-radius: var(--r-pill);
+  border-color: var(--mode);
+  background: color-mix(in srgb, var(--mode) 14%, transparent);
+  color: var(--mode);
+  font-size: var(--fs-lg); font-weight: 500;
+  box-shadow: 0 0 calc(28px * var(--glow)) color-mix(in srgb, var(--mode) 35%, transparent), inset 0 0 calc(18px * var(--glow)) color-mix(in srgb, var(--mode) 18%, transparent);
+}
+.ctrl--main svg { fill: currentColor; stroke: none; }
+.ctrl--main .icon-pause { fill: none; stroke: currentColor; stroke-width: 2.6; }
+.ctrl--main:hover { background: color-mix(in srgb, var(--mode) 22%, transparent); }
+.ctrl--main:active { transform: scale(0.98); }
+.ctrl--main .icon-pause { display: none; }
+body[data-status='running'] .ctrl--main .icon-play { display: none; }
+body[data-status='running'] .ctrl--main .icon-pause { display: block; }
+body[data-status='running'] .ctrl--main { background: transparent; }
+
+/* ---------------------------------------------------------------- task chip */
+.task-chip {
+  display: inline-flex; align-items: center; gap: 10px;
+  max-width: min(520px, 100%);
+  padding: 8px 12px 8px 18px;
+  border-radius: var(--r-pill);
+  border: 1px dashed var(--line-strong);
+  background: transparent;
+  color: var(--text-2);
+}
+.task-chip svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.task-chip__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-chip__count { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--focus); flex: none; }
+.task-chip:hover:not(:disabled) { color: var(--text); border-color: color-mix(in srgb, var(--focus) 50%, transparent); }
+.task-chip[data-has-task='true'] { border-style: solid; color: var(--text); }
+.task-chip:disabled { opacity: 0.4; }
+
+/* ---------------------------------------------------------------- today strip */
+.today {
+  margin: auto 0 0;
+  padding-top: 18px;
+  width: min(720px, 100%);
+  display: grid; grid-template-columns: 1fr 1fr 1.4fr;
+  border-top: 1px solid var(--line);
+}
+.today__item { padding: 4px 20px; }
+.today__item + .today__item { border-left: 1px solid var(--line); }
+.today dt { color: var(--text-3); font-size: var(--fs-xs); }
+.today dd { margin: 2px 0 0; font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
+.today__item--goal dd { display: flex; flex-direction: column; gap: 8px; }
+
+.goalbar { position: relative; display: block; height: 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
+.goalbar__fill {
+  position: absolute; inset: 0 auto 0 0; width: 0;
+  background: linear-gradient(90deg, var(--secondary), var(--focus));
+  box-shadow: 0 0 calc(10px * var(--glow)) var(--focus);
+  transition: width 600ms var(--ease);
+}
+.goalbar[data-met='true'] .goalbar__fill { background: var(--focus); }
+
+@media (max-width: 760px) {
+  .page--focus { gap: 16px; padding-top: 18px; }
+  .controls { gap: 14px; }
+  .ctrl--main { min-width: 140px; height: 54px; }
+  .today { grid-template-columns: 1fr 1fr; row-gap: 12px; }
+  .today__item--goal { grid-column: 1 / -1; border-left: 0 !important; }
+}

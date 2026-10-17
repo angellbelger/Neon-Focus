@@ -1,0 +1,35 @@
+.filters {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+.filters label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); }
+.filters input, .filters select { height: 36px; font-size: var(--fs-sm); color: var(--text); }
+
+.table-wrap { overflow-x: auto; }
+.history-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.history-table th {
+  text-align: left; font-weight: 500; color: var(--text-3); font-size: var(--fs-xs);
+  padding: 14px 16px 10px; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0;
+}
+.history-table td { padding: 11px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.history-table tr:last-child td { border-bottom: 0; }
+.history-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.history-table td.task-cell { white-space: normal; color: var(--text-2); max-width: 32ch; }
+.history-table .day-row td {
+  padding-top: 18px; color: var(--text-2); font-weight: 500; border-bottom-color: var(--line-strong);
+}
+.history-table .deleted { color: var(--text-3); font-style: italic; }
+
+.type-tag { display: inline-flex; align-items: center; gap: 8px; }
+.type-tag::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 calc(6px * var(--glow)) var(--c); }
+.type-tag[data-type='focus'] { --c: var(--focus); }
+.type-tag[data-type='short_break'] { --c: var(--short); }
+.type-tag[data-type='long_break'] { --c: var(--long); }
+
+.status-tag { font-size: var(--fs-xs); padding: 2px 10px; border-radius: var(--r-pill); border: 1px solid var(--line-strong); color: var(--text-2); }
+.status-tag[data-status='completed'] { color: var(--emerald); border-color: color-mix(in srgb, var(--emerald) 35%, transparent); }
+.status-tag[data-status='interrupted'] { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
+
+.load-more { display: flex; margin: 18px auto 0; }

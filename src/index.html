@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en" data-theme="cyan">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Neon Pomodoro</title>
+  <link rel="stylesheet" href="styles/tokens.css">
+  <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="styles/timer.css">
+  <link rel="stylesheet" href="styles/dashboard.css">
+  <link rel="stylesheet" href="styles/tasks.css">
+  <link rel="stylesheet" href="styles/history.css">
+  <link rel="stylesheet" href="styles/settings.css">
+  <script src="js/env-check.js"></script>
+  <script src="vendor/chartjs/chart.umd.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"><span class="ambient__a"></span><span class="ambient__b"></span></div>
+
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <div class="shell">
+    <nav class="rail" aria-label="Main">
+      <div class="rail__brand" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="28" height="28"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="3 2.2"/><circle cx="16" cy="16" r="2.6" fill="currentColor"/></svg>
+      </div>
+
+      <ul class="rail__list">
+        <li><button class="rail__item" data-nav="focus" aria-keyshortcuts="Control+1">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
+          <span>Focus</span></button></li>
+        <li><button class="rail__item" data-nav="dashboard" aria-keyshortcuts="Control+2">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 18.5l5-6 4 3.5 7.5-9"/><path d="M3.5 21h17"/></svg>
+          <span>Dashboard</span></button></li>
+        <li><button class="rail__item" data-nav="tasks" aria-keyshortcuts="Control+3">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5l1.8 1.8L9 5"/><path d="M4 12.5l1.8 1.8L9 11"/><path d="M4 18.5l1.8 1.8L9 17"/><path d="M12.5 7h8M12.5 13h8M12.5 19h8"/></svg>
+          <span>Tasks</span></button></li>
+        <li><button class="rail__item" data-nav="history" aria-keyshortcuts="Control+4">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4.5v3.8h3.8"/><path d="M12 8v4.3l2.8 1.7"/></svg>
+          <span>History</span></button></li>
+      </ul>
+
+      <button class="rail__mini" id="rail-mini" data-nav="focus" hidden aria-label="Back to the running timer">
+        <span class="rail__mini-time" id="rail-mini-time">25:00</span>
+        <span class="rail__mini-mode" id="rail-mini-mode">Focus</span>
+      </button>
+
+      <button class="rail__item rail__item--settings" data-nav="settings" aria-keyshortcuts="Control+5">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+        <span>Settings</span></button>
+    </nav>
+
+    <main id="main" tabindex="-1">
+      <!-- ============================================================ FOCUS -->
+      <section class="page page--focus" data-page="focus" aria-labelledby="focus-heading">
+        <h1 id="focus-heading" class="visually-hidden">Focus timer</h1>
+
+        <div class="mode-switch" role="radiogroup" aria-label="Session type">
+          <button role="radio" data-mode="focus" aria-checked="true">Focus</button>
+          <button role="radio" data-mode="short_break" aria-checked="false">Short break</button>
+          <button role="radio" data-mode="long_break" aria-checked="false">Long break</button>
+        </div>
+
+        <div class="banner" id="focus-banner" role="status" aria-live="polite" hidden>
+          <span class="banner__text" id="focus-banner-text"></span>
+          <button class="btn btn--small btn--accent" id="focus-banner-action" hidden></button>
+          <button class="banner__close" id="focus-banner-close" aria-label="Dismiss message">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+
+        <div class="dial" id="dial">
+          <svg class="dial__svg" viewBox="0 0 400 400" aria-hidden="true">
+            <defs>
+              <filter id="tube-glow" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="3.2" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <circle class="dial__track" cx="200" cy="200" r="168"/>
+            <circle class="dial__arc" id="dial-arc" cx="200" cy="200" r="168"/>
+            <g id="dial-ticks"></g>
+          </svg>
+          <div class="dial__face">
+            <p class="dial__mode" id="dial-mode">Focus</p>
+            <p class="dial__time" id="dial-time" role="timer" aria-live="off" aria-label="Time remaining">25:00</p>
+            <p class="dial__state" id="dial-state">Ready</p>
+            <ol class="cycle" id="cycle" aria-label="Progress toward long break"></ol>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button class="ctrl ctrl--side" id="btn-reset" aria-label="Reset session" aria-keyshortcuts="R" title="Reset (R)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v3.7h3.7"/></svg>
+          </button>
+          <button class="ctrl ctrl--main" id="btn-main" aria-keyshortcuts="Space" title="Start or pause (Space)">
+            <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+            <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 5.5v13M15.5 5.5v13"/></svg>
+            <span id="btn-main-label">Start</span>
+          </button>
+          <button class="ctrl ctrl--side" id="btn-skip" aria-label="Skip to next session" aria-keyshortcuts="S" title="Skip (S)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 6l8 6-8 6z"/><path d="M17.5 6v12"/></svg>
+          </button>
+        </div>
+
+        <button class="task-chip" id="task-chip" aria-haspopup="dialog">
+          <span class="task-chip__label" id="task-chip-label">No task selected</span>
+          <span class="task-chip__count" id="task-chip-count"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
+        </button>
+
+        <dl class="today" aria-label="Today">
+          <div class="today__item">
+            <dt>Pomodoros today</dt>
+            <dd id="today-pomodoros">0</dd>
+          </div>
+          <div class="today__item">
+            <dt>Focused today</dt>
+            <dd id="today-focus">0m</dd>
+          </div>
+          <div class="today__item today__item--goal">
+            <dt>Daily goal</dt>
+            <dd><span id="today-goal-text">0 of 8</span>
+              <span class="goalbar" role="progressbar" aria-label="Daily goal progress" aria-valuemin="0" aria-valuemax="8" aria-valuenow="0" id="today-goal-bar"><span class="goalbar__fill" id="today-goal-fill"></span></span>
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <!-- ============================================================ DASHBOARD -->
+      <section class="page page--dashboard" data-page="dashboard" aria-labelledby="dash-heading" hidden>
+        <header class="page__head">
+          <h1 id="dash-heading">Dashboard</h1>
+          <div class="segmented" role="radiogroup" aria-label="Period">
+            <button role="radio" data-period="day" aria-checked="true">Day</button>
+            <button role="radio" data-period="week" aria-checked="false">Week</button>
+            <button role="radio" data-period="month" aria-checked="false">Month</button>
+            <button role="radio" data-period="year" aria-checked="false">Year</button>
+          </div>
+          <div class="period-nav">
+            <button class="icon-btn" id="dash-prev" aria-label="Previous period"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+            <span class="period-nav__label" id="dash-range" aria-live="polite">Today</span>
+            <button class="icon-btn" id="dash-next" aria-label="Next period"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+            <button class="btn btn--small btn--ghost" id="dash-today">Current</button>
+          </div>
+        </header>
+
+        <div class="dash-empty" id="dash-empty" hidden>
+          <p class="dash-empty__title" id="dash-empty-title">No sessions in this period</p>
+          <p class="dash-empty__text" id="dash-empty-text">Statistics appear here as soon as you finish or stop a session.</p>
+          <button class="btn btn--accent" data-nav="focus">Go to the timer</button>
+        </div>
+
+        <div class="dash-body" id="dash-body">
+          <div class="kpis" id="dash-kpis"></div>
+          <div class="charts">
+            <figure class="panel chart-panel chart-panel--wide">
+              <figcaption><span class="chart-title">Focus time</span><span class="chart-sub" id="chart-focus-sub"></span></figcaption>
+              <div class="chart-box"><canvas id="chart-focus" role="img" aria-label="Line chart of focus time"></canvas></div>
+            </figure>
+            <figure class="panel chart-panel">
+              <figcaption><span class="chart-title">Completed Pomodoros</span><span class="chart-sub" id="chart-pomo-sub"></span></figcaption>
+              <div class="chart-box"><canvas id="chart-pomodoros" role="img" aria-label="Line chart of completed Pomodoros"></canvas></div>
+            </figure>
+            <figure class="panel chart-panel">
+              <figcaption>
+                <span class="chart-title">Compared with the previous period</span>
+                <span class="mini-toggle" role="radiogroup" aria-label="Comparison metric">
+                  <button role="radio" data-compare="focus" aria-checked="true">Focus time</button>
+                  <button role="radio" data-compare="pomodoros" aria-checked="false">Pomodoros</button>
+                </span>
+              </figcaption>
+              <div class="chart-box"><canvas id="chart-compare" role="img" aria-label="Line chart comparing this period with the previous one"></canvas></div>
+              <p class="chart-note" id="chart-compare-note" hidden>No sessions in the previous period yet, so there is nothing to compare against.</p>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ TASKS -->
+      <section class="page page--tasks" data-page="tasks" aria-labelledby="tasks-heading" hidden>
+        <header class="page__head">
+          <h1 id="tasks-heading">Tasks</h1>
+          <div class="segmented" role="radiogroup" aria-label="Show tasks">
+            <button role="radio" data-task-filter="active" aria-checked="true">Active</button>
+            <button role="radio" data-task-filter="completed" aria-checked="false">Completed</button>
+            <button role="radio" data-task-filter="all" aria-checked="false">All</button>
+          </div>
+        </header>
+
+        <form class="quick-add panel" id="task-quick-add" autocomplete="off">
+          <label class="visually-hidden" for="quick-title">New task</label>
+          <input id="quick-title" name="title" type="text" maxlength="200" placeholder="Add a task, e.g. Draft the quarterly report" required>
+          <label class="quick-add__est" for="quick-est">
+            <span>Estimate</span>
+            <input id="quick-est" name="estimate" type="number" min="1" max="99" placeholder="—" inputmode="numeric">
+            <span class="quick-add__unit">Pomodoros</span>
+          </label>
+          <button class="btn btn--accent" type="submit">Add task</button>
+        </form>
+
+        <ul class="task-list" id="task-list" aria-live="polite"></ul>
+        <div class="empty" id="task-empty" hidden>
+          <p class="empty__title" id="task-empty-title">No active tasks</p>
+          <p class="empty__text" id="task-empty-text">Add one above, then pick it on the Focus screen. Pomodoros you finish on it are counted here.</p>
+        </div>
+      </section>
+
+      <!-- ============================================================ HISTORY -->
+      <section class="page page--history" data-page="history" aria-labelledby="history-heading" hidden>
+        <header class="page__head">
+          <h1 id="history-heading">History</h1>
+          <p class="page__meta" id="history-count" aria-live="polite"></p>
+        </header>
+
+        <form class="filters panel" id="history-filters">
+          <label>From<input type="date" name="from" id="hf-from"></label>
+          <label>To<input type="date" name="to" id="hf-to"></label>
+          <label>Type
+            <select name="type" id="hf-type">
+              <option value="all">All types</option>
+              <option value="focus">Focus</option>
+              <option value="short_break">Short break</option>
+              <option value="long_break">Long break</option>
+            </select>
+          </label>
+          <label>Status
+            <select name="status" id="hf-status">
+              <option value="all">All statuses</option>
+              <option value="completed">Completed</option>
+              <option value="interrupted">Interrupted</option>
+              <option value="abandoned">Skipped</option>
+            </select>
+          </label>
+          <button class="btn btn--ghost btn--small" type="reset">Clear filters</button>
+        </form>
+
+        <div class="table-wrap panel">
+          <table class="history-table">
+            <thead>
+              <tr><th scope="col">Date</th><th scope="col">Time</th><th scope="col">Type</th><th scope="col">Status</th><th scope="col" class="num">Duration</th><th scope="col">Task</th></tr>
+            </thead>
+            <tbody id="history-body"></tbody>
+          </table>
+          <div class="empty" id="history-empty" hidden>
+            <p class="empty__title">No sessions match these filters</p>
+            <p class="empty__text">Finished, stopped and skipped sessions are listed here with their exact start and end times.</p>
+          </div>
+        </div>
+        <button class="btn btn--ghost load-more" id="history-more" hidden>Show more</button>
+      </section>
+
+      <!-- ============================================================ SETTINGS -->
+      <section class="page page--settings" data-page="settings" aria-labelledby="settings-heading" hidden>
+        <header class="page__head">
+          <h1 id="settings-heading">Settings</h1>
+          <p class="page__meta" id="settings-status" role="status" aria-live="polite"></p>
+        </header>
+
+        <form class="settings" id="settings-form" novalidate>
+          <fieldset class="panel settings__group">
+            <legend>Timer</legend>
+            <div class="field field--num"><label for="s-focus">Focus</label><input id="s-focus" name="focusMinutes" type="number" min="1" max="180" required><span class="unit">min</span></div>
+            <div class="field field--num"><label for="s-short">Short break</label><input id="s-short" name="shortBreakMinutes" type="number" min="1" max="60" required><span class="unit">min</span></div>
+            <div class="field field--num"><label for="s-long">Long break</label><input id="s-long" name="longBreakMinutes" type="number" min="1" max="90" required><span class="unit">min</span></div>
+            <div class="field field--num"><label for="s-interval">Sessions before a long break</label><input id="s-interval" name="longBreakInterval" type="number" min="1" max="12" required></div>
+            <div class="field field--switch"><label for="s-auto-breaks">Start breaks automatically</label><input id="s-auto-breaks" name="autoStartBreaks" type="checkbox" role="switch"></div>
+            <div class="field field--switch"><label for="s-auto-focus">Start focus sessions automatically after a break</label><input id="s-auto-focus" name="autoStartFocus" type="checkbox" role="switch"></div>
+            <p class="field__hint">Changes apply to the next session. A session already in progress keeps its length.</p>
+          </fieldset>
+
+          <fieldset class="panel settings__group">
+            <legend>Alarm</legend>
+            <div class="field field--switch"><label for="s-sound">Play a sound when a session ends</label><input id="s-sound" name="soundEnabled" type="checkbox" role="switch"></div>
+            <div class="field"><label for="s-alarm">Sound</label>
+              <select id="s-alarm" name="alarmSound">
+                <option value="chime">Chime</option><option value="bell">Bell</option>
+                <option value="digital">Digital</option><option value="pulse">Pulse</option>
+              </select>
+            </div>
+            <div class="field field--range"><label for="s-volume">Volume</label><input id="s-volume" name="alarmVolume" type="range" min="0" max="100" step="5"><output id="s-volume-out" for="s-volume">70%</output></div>
+            <div class="field field--switch"><label for="s-notify">Show a system notification</label><input id="s-notify" name="notificationsEnabled" type="checkbox" role="switch"></div>
+            <div class="field"><span class="field__label">Preview</span><button class="btn btn--small btn--ghost" type="button" id="s-test-sound">Play sound</button></div>
+          </fieldset>
+
+          <fieldset class="panel settings__group">
+            <legend>Goals</legend>
+            <div class="field field--num"><label for="s-goal">Daily goal</label><input id="s-goal" name="dailyGoal" type="number" min="1" max="48" required><span class="unit">Pomodoros</span></div>
+            <div class="field"><label for="s-weekstart">Weeks start on</label>
+              <select id="s-weekstart" name="weekStart"><option value="1">Monday</option><option value="0">Sunday</option></select>
+            </div>
+          </fieldset>
+
+          <fieldset class="panel settings__group">
+            <legend>Appearance</legend>
+            <div class="field"><span class="field__label" id="theme-label">Accent</span>
+              <div class="swatches" role="radiogroup" aria-labelledby="theme-label">
+                <button type="button" role="radio" class="swatch swatch--cyan" data-theme-choice="cyan" aria-checked="true"><span>Cyan</span></button>
+                <button type="button" role="radio" class="swatch swatch--violet" data-theme-choice="violet" aria-checked="false"><span>Violet</span></button>
+                <button type="button" role="radio" class="swatch swatch--emerald" data-theme-choice="emerald" aria-checked="false"><span>Emerald</span></button>
+              </div>
+            </div>
+            <div class="field field--range"><label for="s-glow">Glow</label><input id="s-glow" name="glowIntensity" type="range" min="0" max="100" step="5"><output id="s-glow-out" for="s-glow">60%</output></div>
+            <div class="field field--switch"><label for="s-motion">Reduce motion</label><input id="s-motion" name="reduceMotion" type="checkbox" role="switch"></div>
+            <div class="field field--switch"><label for="s-tray">Show the countdown in the menu bar</label><input id="s-tray" name="trayTimer" type="checkbox" role="switch"></div>
+          </fieldset>
+
+          <fieldset class="panel settings__group settings__group--data">
+            <legend>Data</legend>
+            <p class="field__hint" id="s-db-path">Your data is stored in a local SQLite file.</p>
+            <div class="data-actions">
+              <button class="btn btn--ghost btn--small" type="button" id="s-export">Export sessions as CSV</button>
+              <button class="btn btn--ghost btn--small" type="button" id="s-backup">Back up database</button>
+              <button class="btn btn--ghost btn--small" type="button" id="s-reveal">Show database file</button>
+            </div>
+            <div class="data-actions data-actions--danger">
+              <button class="btn btn--ghost btn--small" type="button" id="s-defaults">Restore default settings</button>
+              <button class="btn btn--danger btn--small" type="button" id="s-clear">Delete all sessions and tasks</button>
+            </div>
+          </fieldset>
+        </form>
+        <p class="shortcuts">Shortcuts: <kbd>Space</kbd> start or pause, <kbd>R</kbd> reset, <kbd>S</kbd> skip, <kbd>Ctrl</kbd>+<kbd>1</kbd>–<kbd>5</kbd> switch pages.</p>
+      </section>
+    </main>
+  </div>
+
+  <!-- Task picker -->
+  <dialog class="dialog" id="task-picker" aria-labelledby="task-picker-title">
+    <form method="dialog" class="dialog__inner">
+      <h2 id="task-picker-title">What are you working on?</h2>
+      <ul class="picker-list" id="task-picker-list"></ul>
+      <div class="dialog__actions">
+        <button class="btn btn--ghost" value="cancel">Cancel</button>
+        <button class="btn btn--ghost" type="button" id="task-picker-manage">Manage tasks</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Task editor -->
+  <dialog class="dialog" id="task-editor" aria-labelledby="task-editor-title">
+    <form method="dialog" class="dialog__inner" id="task-editor-form" novalidate>
+      <h2 id="task-editor-title">Edit task</h2>
+      <label class="stack">Title<input name="title" type="text" maxlength="200" required></label>
+      <label class="stack">Notes<textarea name="description" rows="3" maxlength="2000"></textarea></label>
+      <label class="stack">Estimated Pomodoros<input name="estimate" type="number" min="1" max="99" placeholder="No estimate"></label>
+      <p class="form-error" id="task-editor-error" role="alert" hidden></p>
+      <div class="dialog__actions">
+        <button class="btn btn--ghost" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn btn--accent" value="save" id="task-editor-save">Save task</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Confirmation -->
+  <dialog class="dialog dialog--confirm" id="confirm" aria-labelledby="confirm-title" aria-describedby="confirm-text">
+    <form method="dialog" class="dialog__inner">
+      <h2 id="confirm-title">Are you sure?</h2>
+      <p id="confirm-text"></p>
+      <div class="dialog__actions">
+        <button class="btn btn--ghost" value="cancel" autofocus>Cancel</button>
+        <button class="btn btn--danger" value="ok" id="confirm-ok">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+</body>
+</html>

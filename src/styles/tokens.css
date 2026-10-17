@@ -1,0 +1,91 @@
+/* ------------------------------------------------------------------ fonts */
+@font-face { font-family: 'Space Grotesk'; font-weight: 400; font-display: swap; src: url('../vendor/fonts/space-grotesk/space-grotesk-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Space Grotesk'; font-weight: 500; font-display: swap; src: url('../vendor/fonts/space-grotesk/space-grotesk-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Space Grotesk'; font-weight: 600; font-display: swap; src: url('../vendor/fonts/space-grotesk/space-grotesk-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-weight: 200; font-display: swap; src: url('../vendor/fonts/jetbrains-mono/jetbrains-mono-latin-200-normal.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-weight: 400; font-display: swap; src: url('../vendor/fonts/jetbrains-mono/jetbrains-mono-latin-400-normal.woff2') format('woff2'); }
+
+/* ------------------------------------------------------------------ tokens
+   Colour carries meaning everywhere in the app:
+   --focus      focus sessions, primary actions, focus-time data
+   --short      short breaks
+   --long       long breaks, "previous period" data, Pomodoro counts
+   --danger     destructive actions, interrupted sessions                 */
+:root {
+  --void: #05060b;
+  --deep: #0a0d16;
+  --panel: rgba(140, 170, 255, 0.045);
+  --panel-strong: rgba(140, 170, 255, 0.08);
+  --line: rgba(150, 200, 255, 0.10);
+  --line-strong: rgba(150, 220, 255, 0.22);
+
+  --text: #e9eef7;
+  --text-2: #a3adc2;
+  --text-3: #6d7891;
+
+  --cyan: #3ef2ff;
+  --violet: #ab7bff;
+  --amber: #ffb65c;
+  --emerald: #4dffb0;
+  --danger: #ff5c7a;
+
+  --focus: var(--cyan);
+  --short: var(--amber);
+  --long: var(--violet);
+  --secondary: var(--violet);
+
+  --mode: var(--focus);       /* switched by data-mode on <body> */
+
+  --glow: 0.6;                /* 0..1, user setting */
+
+  --font-ui: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* type scale (1.25 ratio) */
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.875rem;
+  --fs-md: 1rem;
+  --fs-lg: 1.25rem;
+  --fs-xl: 1.563rem;
+  --fs-2xl: 1.953rem;
+
+  --r-sm: 8px;
+  --r-md: 14px;
+  --r-lg: 22px;
+  --r-pill: 999px;
+
+  --ease: cubic-bezier(.2, .7, .2, 1);
+  --t-fast: 140ms;
+  --t-med: 280ms;
+
+  color-scheme: dark;
+}
+
+[data-theme='violet'] {
+  --focus: #b98cff;
+  --long: #5cc8ff;
+  --secondary: #5cc8ff;
+}
+
+[data-theme='emerald'] {
+  --focus: var(--emerald);
+  --long: var(--violet);
+  --secondary: var(--violet);
+}
+
+body[data-mode='short_break'] { --mode: var(--short); }
+body[data-mode='long_break'] { --mode: var(--long); }
+
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

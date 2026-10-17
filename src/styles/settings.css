@@ -1,0 +1,52 @@
+.settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+.settings__group { margin: 0; padding: 20px 22px 18px; min-width: 0; }
+.settings__group legend { float: left; width: 100%; padding: 0; margin-bottom: 10px; font-size: var(--fs-lg); font-weight: 500; }
+.settings__group legend + * { clear: both; }
+
+.field {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 52px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.field:last-of-type { border-bottom: 0; }
+.field > label, .field__label { flex: 1; color: var(--text-2); font-size: var(--fs-sm); }
+.field input[type='number'] { width: 76px; text-align: center; font-variant-numeric: tabular-nums; }
+.field select { min-width: 140px; }
+.field .unit { width: 72px; color: var(--text-3); font-size: var(--fs-xs); }
+.field--range input { flex: 0 1 160px; }
+.field--range output { width: 44px; text-align: right; color: var(--text-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.field__hint { color: var(--text-3); font-size: var(--fs-xs); margin-top: 10px; overflow-wrap: anywhere; }
+.field__error { color: var(--danger); font-size: var(--fs-xs); flex-basis: 100%; }
+
+.swatches { display: flex; gap: 8px; }
+.swatch {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 5px 12px 5px 6px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: transparent;
+  font-size: var(--fs-xs); color: var(--text-2);
+}
+.swatch::before { content: ''; width: 16px; height: 16px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px var(--c); }
+.swatch--cyan { --c: #3ef2ff; }
+.swatch--violet { --c: #b98cff; }
+.swatch--emerald { --c: #4dffb0; }
+.swatch[aria-checked='true'] { border-color: var(--c); color: var(--text); }
+
+.settings__group--data { grid-column: 1 / -1; }
+.data-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.data-actions--danger { padding-top: 14px; border-top: 1px solid var(--line); }
+
+.shortcuts { margin-top: 24px; color: var(--text-3); font-size: var(--fs-sm); }
+
+@media (max-width: 760px) {
+  .settings { grid-template-columns: 1fr; }
+  .field { flex-wrap: wrap; }
+  .field .unit { width: auto; }
+}
