@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
-  <title>Neon Pomodoro</title>
+  <title>Focus Neon</title>
   <link rel="stylesheet" href="styles/tokens.css">
   <link rel="stylesheet" href="styles/main.css">
   <link rel="stylesheet" href="styles/timer.css">
@@ -311,9 +311,11 @@
           <fieldset class="panel settings__group settings__group--data">
             <legend>Data</legend>
             <p class="field__hint" id="s-db-path">Your data is stored in a local SQLite file.</p>
+            <p class="field__hint">Use <strong>Back up database</strong> to save a copy, and <strong>Import database</strong> to restore one, for example after reinstalling or on a new computer.</p>
             <div class="data-actions">
               <button class="btn btn--ghost btn--small" type="button" id="s-export">Export sessions as CSV</button>
               <button class="btn btn--ghost btn--small" type="button" id="s-backup">Back up database</button>
+              <button class="btn btn--ghost btn--small" type="button" id="s-import">Import database</button>
               <button class="btn btn--ghost btn--small" type="button" id="s-reveal">Show database file</button>
             </div>
             <div class="data-actions data-actions--danger">
@@ -324,6 +326,9 @@
         </form>
         <p class="shortcuts">Shortcuts: <kbd>Space</kbd> start or pause, <kbd>R</kbd> reset, <kbd>S</kbd> skip, <kbd>Ctrl</kbd>+<kbd>1</kbd>–<kbd>5</kbd> switch pages.</p>
       </section>
+
+      <!-- Shared footer: shown under every page -->
+      <footer class="credit">Designed by Angell Belger</footer>
     </main>
   </div>
 

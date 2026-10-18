@@ -60,6 +60,9 @@ async function boot() {
   document.documentElement.dataset.booted = 'true';
 
   const info = await api.app.info();
+  if (info.carriedOverFrom) {
+    toast('Welcome to Focus Neon. Your tasks and history from Neon Pomodoro were carried over.', { timeout: 9000 });
+  }
   if (info.recoveredFrom) {
     toast(`The database file was damaged and a new one was created. The old file was kept at ${info.recoveredFrom}.`, { type: 'error', timeout: 15000 });
   }

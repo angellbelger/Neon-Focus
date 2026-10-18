@@ -1,5 +1,5 @@
 @echo off
-rem Windows launcher: double-click to start Neon Pomodoro.
+rem Windows launcher: double-click to start Focus Neon.
 cd /d "%~dp0"
 
 where npm >nul 2>nul
@@ -11,7 +11,7 @@ if errorlevel 1 (
 )
 
 if not exist "node_modules\electron\" (
-  echo First run: installing Neon Pomodoro ^(this takes a minute^)...
+  echo First run: installing Focus Neon ^(this takes a minute^)...
   call npm install
   if errorlevel 1 (
     echo.

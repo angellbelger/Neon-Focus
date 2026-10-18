@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 const { ipcMain, dialog, shell, app, BrowserWindow } = require('electron');
 const { PERIODS } = require('../core/stats');
 const { cleanId } = require('../core/database/repositories/tasks-repository');
@@ -38,7 +39,8 @@ function stamp() {
 }
 
 function registerIpc(svc, { getWindow, dbPath, onSettingsChanged, startupInfo }) {
-  const { engine, tasksRepo, sessionsRepo, settingsRepo } = svc;
+  const { engine, tasksRepo, sessionsRepo, settingsRepo, stepsRepo } = svc;
+  let pendingImport = null; // validated backup waiting for the user's confirmation
   const dataChanged = () => broadcast('data:changed', { at: Date.now() });
 
   // ---- timer
@@ -54,7 +56,7 @@ function registerIpc(svc, { getWindow, dbPath, onSettingsChanged, startupInfo })
   // ---- tasks
   handle('tasks:list', (_e, status = 'all') => {
     if (!['all', 'active', 'completed'].includes(status)) throw new Error('Invalid task filter.');
-    return tasksRepo.list({ status });
+    return svc.listTasks(status);
   });
   handle('tasks:create', (_e, t = {}) => {
     const task = tasksRepo.create({ title: t.title, description: t.description, estimatedPomodoros: t.estimatedPomodoros });
@@ -82,6 +84,12 @@ function registerIpc(svc, { getWindow, dbPath, onSettingsChanged, startupInfo })
     return removed;
   });
   handle('tasks:sessions', (_e, id) => tasksRepo.sessionsFor(id));
+
+  // ---- task steps (each call returns the task's full, ordered step list)
+  handle('steps:create', (_e, taskId, title) => stepsRepo.create(taskId, title));
+  handle('steps:rename', (_e, stepId, title) => stepsRepo.rename(stepId, title));
+  handle('steps:setCompleted', (_e, stepId, completed) => stepsRepo.setCompleted(stepId, completed === true));
+  handle('steps:delete', (_e, stepId) => stepsRepo.delete(stepId));
 
   // ---- stats & history
   handle('stats:report', (_e, period, anchor) => {
@@ -118,7 +126,7 @@ function registerIpc(svc, { getWindow, dbPath, onSettingsChanged, startupInfo })
   handle('data:exportCsv', async () => {
     const { canceled, filePath } = await dialog.showSaveDialog(getWindow(), {
       title: 'Export session history',
-      defaultPath: `neon-pomodoro-sessions-${stamp()}.csv`,
+      defaultPath: `focus-neon-sessions-${stamp()}.csv`,
       filters: [{ name: 'CSV', extensions: ['csv'] }],
     });
     if (canceled || !filePath) return { saved: false };
@@ -128,13 +136,54 @@ function registerIpc(svc, { getWindow, dbPath, onSettingsChanged, startupInfo })
   handle('data:backup', async () => {
     const { canceled, filePath } = await dialog.showSaveDialog(getWindow(), {
       title: 'Back up database',
-      defaultPath: `neon-pomodoro-backup-${stamp()}.sqlite`,
+      defaultPath: `focus-neon-backup-${stamp()}.sqlite`,
       filters: [{ name: 'SQLite database', extensions: ['sqlite', 'db'] }],
     });
     if (canceled || !filePath) return { saved: false };
     svc.db.backupTo(filePath);
     return { saved: true, filePath };
   });
+  // Import, step 1: pick a file and validate it in memory. Nothing changes yet.
+  handle('data:importPick', async () => {
+    pendingImport = null;
+    const { canceled, filePaths } = await dialog.showOpenDialog(getWindow(), {
+      title: 'Import a Focus Neon backup',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Focus Neon backup', extensions: ['sqlite', 'db', 'sqlite3'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    if (canceled || !filePaths || !filePaths[0]) return { selected: false };
+    const filePath = filePaths[0];
+    if (path.resolve(filePath) === path.resolve(dbPath)) {
+      throw new Error('That is the database the app is using right now. Choose a backup file instead.');
+    }
+    let bytes;
+    try {
+      bytes = fs.readFileSync(filePath);
+    } catch (err) {
+      throw new Error(`The file could not be read (${err.code || err.message}).`);
+    }
+    const prepared = await svc.prepareImport(bytes);
+    pendingImport = { prepared, fileName: path.basename(filePath) };
+    return { selected: true, fileName: pendingImport.fileName, summary: prepared.summary };
+  });
+
+  // Import, step 2: after the user confirms, back up the current data and swap.
+  handle('data:importApply', () => {
+    if (!pendingImport) throw new Error('Choose a backup file first.');
+    const { prepared, fileName } = pendingImport;
+    pendingImport = null;
+    const result = svc.applyImport(prepared, { safetyDir: path.join(path.dirname(dbPath), 'backups') });
+    const settings = settingsRepo.getAll();
+    onSettingsChanged(settings);
+    broadcast('settings:changed', settings);
+    dataChanged();
+    return { ...result, fileName };
+  });
+  handle('data:importCancel', () => { pendingImport = null; return true; });
+
   handle('data:clearAll', () => {
     svc.clearAllData();
     dataChanged();
@@ -147,6 +196,7 @@ function registerIpc(svc, { getWindow, dbPath, onSettingsChanged, startupInfo })
     dbPath,
     platform: process.platform,
     recoveredFrom: startupInfo.recoveredFrom || null,
+    carriedOverFrom: startupInfo.carriedOverFrom || null,
     secondsPerMinute: startupInfo.secondsPerMinute,
   }));
 

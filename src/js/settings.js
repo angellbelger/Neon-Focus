@@ -5,6 +5,7 @@ import { api, store } from './store.js';
 import { $, $$, h, radioGroup, toast, toastError, confirmAction } from './ui.js';
 import { playAlarm } from './audio.js';
 import { registerPage } from './navigation.js';
+import { plural, dateShort } from './format.js';
 
 let themeRadios;
 
@@ -75,6 +76,55 @@ function valueOf(el) {
   return el.value;
 }
 
+function backupDescription(sum) {
+  const parts = [plural(sum.tasks, 'task'), plural(sum.steps, 'step'), plural(sum.sessions, 'session')];
+  let range = '';
+  if (sum.firstSessionAt && sum.lastSessionAt) {
+    const day = (iso) => { const ms = Date.parse(iso); return `${dateShort(ms)} ${new Date(ms).getFullYear()}`; };
+    const a = day(sum.firstSessionAt);
+    const b = day(sum.lastSessionAt);
+    range = a === b ? ` recorded on ${a}` : ` recorded between ${a} and ${b}`;
+  }
+  return `${parts[0]}, ${parts[1]} and ${parts[2]}${range} (${plural(sum.pomodoros, 'Pomodoro')})`;
+}
+
+async function importDatabase() {
+  const btn = $('#s-import');
+  btn.disabled = true;
+  try {
+    if (store.timer && store.timer.status !== 'idle') {
+      toastError(new Error('Finish or reset the current session before importing a backup.'));
+      return;
+    }
+    let picked;
+    try {
+      picked = await api.data.pickImport();
+    } catch (err) {
+      toastError(new Error(`Import failed: ${err.message}`));
+      return;
+    }
+    if (!picked.selected) return;
+
+    const ok = await confirmAction({
+      title: 'Replace your current data?',
+      text: `"${picked.fileName}" contains ${backupDescription(picked.summary)}. `
+        + 'Importing it replaces all tasks, steps, history and settings currently in Focus Neon. '
+        + 'A safety copy of your current data is saved automatically first.',
+      ok: 'Import and replace',
+    });
+    if (!ok) { api.data.cancelImport().catch(() => {}); return; }
+
+    try {
+      const res = await api.data.applyImport();
+      toast(`Backup imported: ${backupDescription(res.summary)}. Your previous data was saved to ${res.safetyBackup}`, { timeout: 12000 });
+    } catch (err) {
+      toastError(new Error(`Import failed, your current data was not changed. ${err.message}`));
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 export function initSettings() {
   const form = $('#settings-form');
 
@@ -114,6 +164,7 @@ export function initSettings() {
       if (r.saved) toast(`Backup saved to ${r.filePath}`);
     } catch (err) { toastError(err); }
   });
+  $('#s-import').addEventListener('click', importDatabase);
   $('#s-reveal').addEventListener('click', () => api.data.revealDatabase().catch(toastError));
   $('#s-defaults').addEventListener('click', async () => {
     const ok = await confirmAction({

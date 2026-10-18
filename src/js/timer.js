@@ -50,7 +50,7 @@ function frame() {
     lastText = text;
     $('#dial-time').textContent = text;
     $('#rail-mini-time').textContent = text;
-    document.title = s.status === 'idle' ? 'Neon Pomodoro' : `${text} ${MODE_LABEL[s.mode]} — Neon Pomodoro`;
+    document.title = s.status === 'idle' ? 'Focus Neon' : `${text} ${MODE_LABEL[s.mode]} — Focus Neon`;
   }
 
   // Lit tubes = remaining time, switching off clockwise from the top.

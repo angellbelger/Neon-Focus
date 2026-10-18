@@ -79,6 +79,22 @@ main {
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-gutter: stable;
+  display: flex;
+  flex-direction: column;
+}
+
+main > .page { flex: 1 0 auto; width: 100%; }
+
+/* ------------------------------------------------------------------ footer credit */
+.credit {
+  flex: none;
+  padding: 10px 16px 14px;
+  text-align: center;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  opacity: 0.8;
+  user-select: none;
 }
 
 .page {

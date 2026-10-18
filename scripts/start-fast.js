@@ -9,12 +9,12 @@ const os = require('os');
 const path = require('path');
 const electron = require('electron');
 
-const dataDir = path.join(os.tmpdir(), 'neon-pomodoro-fast-mode');
+const dataDir = path.join(os.tmpdir(), 'focus-neon-fast-mode');
 console.log(`Fast mode: 1 minute = 1 second. Data folder: ${dataDir}`);
 
 const child = spawn(electron, ['.'], {
   cwd: path.join(__dirname, '..'),
   stdio: 'inherit',
-  env: { ...process.env, NEON_POMODORO_SECONDS_PER_MINUTE: '1', NEON_POMODORO_DATA_DIR: dataDir },
+  env: { ...process.env, FOCUS_NEON_SECONDS_PER_MINUTE: '1', FOCUS_NEON_DATA_DIR: dataDir },
 });
 child.on('close', (code) => process.exit(code ?? 0));

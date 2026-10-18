@@ -23,7 +23,7 @@ async function launch() {
   if (process.getuid && process.getuid() === 0) args.push('--no-sandbox');
   const app = await electron.launch({
     args,
-    env: { ...process.env, NEON_POMODORO_SECONDS_PER_MINUTE: '1', NEON_POMODORO_DATA_DIR: dataDir },
+    env: { ...process.env, FOCUS_NEON_SECONDS_PER_MINUTE: '1', FOCUS_NEON_DATA_DIR: dataDir },
   });
   const page = await app.firstWindow();
   page.on('pageerror', (e) => { console.error('PAGE ERROR', e); process.exitCode = 1; });
@@ -202,6 +202,59 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   step('weekly, monthly and yearly views agree');
   await page.click('[data-period="day"]');
 
+  // --- name and footer
+  await page.click('[data-nav="focus"]');
+  assert.equal(await page.title(), 'Focus Neon');
+  assert.equal(await app.evaluate(({ app: a }) => a.getName()), 'Focus Neon');
+  for (const p of ['focus', 'dashboard', 'tasks', 'history', 'settings']) {
+    await page.click(`.rail [data-nav="${p}"]`);
+    await page.locator('.credit').scrollIntoViewIfNeeded();
+    assert.ok(await page.isVisible('.credit'), `footer on ${p}`);
+    assert.equal((await page.textContent('.credit')).trim(), 'Designed by Angell Belger');
+  }
+  assert.equal(await page.locator('.credit').count(), 1, 'footer is one shared element');
+  step('app is named Focus Neon; footer credit shows on all five pages');
+
+  // --- task steps
+  await page.click('[data-nav="tasks"]');
+  const row = () => page.locator('.task', { hasText: 'quarterly' });
+  await row().locator('.step-add__btn').click();
+  for (const name of ['Speaking', 'Writing', 'Reading']) {
+    await row().locator('.step-add__input').fill(name);
+    await row().locator('.step-add__input').press('Enter');
+    await waitFor(page, (n) => [...document.querySelectorAll('.step__title')].some((b) => b.textContent === n), name);
+  }
+  assert.equal(await page.evaluate(() => document.activeElement.classList.contains('step-add__input')), true, 'field stays ready for the next step');
+  await row().locator('.step-add__input').press('Escape');
+  assert.equal(await row().locator('.step').count(), 3);
+  // complete
+  await row().locator('.step', { hasText: 'Speaking' }).locator('.step__check').click();
+  await waitFor(page, () => document.querySelector('.step[data-done="true"]') !== null);
+  assert.equal(await row().locator('.steps-toggle').textContent(), '1 of 3 steps');
+  // rename
+  await row().locator('.step__title', { hasText: 'Writing' }).click();
+  await row().locator('.step__edit').fill('Writing - 2 pages');
+  await row().locator('.step__edit').press('Enter');
+  await waitFor(page, () => [...document.querySelectorAll('.step__title')].some((b) => b.textContent === 'Writing - 2 pages'));
+  // delete
+  await row().locator('.step', { hasText: 'Reading' }).hover();
+  await row().locator('.step', { hasText: 'Reading' }).locator('.step__delete').click();
+  await waitFor(page, () => document.querySelectorAll('.task .step').length === 2);
+  // other task stays separate
+  await page.locator('.task', { hasText: 'Review pull requests' }).locator('.step-add__btn').click();
+  await page.locator('.task', { hasText: 'Review pull requests' }).locator('.step-add__input').fill('Check CI');
+  await page.locator('.task', { hasText: 'Review pull requests' }).locator('.step-add__input').press('Enter');
+  await page.keyboard.press('Escape');
+  await waitFor(page, () => document.querySelectorAll('.task .step').length === 3);
+  assert.equal(await page.locator('.task', { hasText: 'Review pull requests' }).locator('.step').count(), 1);
+  // collapse / expand
+  await row().locator('.steps-toggle').click();
+  assert.equal(await row().locator('.step').count(), 0);
+  await row().locator('.steps-toggle').click();
+  assert.equal(await row().locator('.step').count(), 2);
+  step('steps: add (Enter keeps the field open), complete, rename, delete, collapse; kept per task');
+  await shot(page, '09-steps');
+
   // --- persistence across restart
   await app.close();
   ({ app, page } = await launch());
@@ -210,7 +263,77 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   assert.equal(await page.locator('#history-body tr:not(.day-row)').count(), 4);
   await page.click('[data-nav="focus"]');
   assert.equal(await page.textContent('#today-pomodoros'), '2');
-  step('history and settings persist after restart');
+  await page.click('[data-nav="tasks"]');
+  await page.waitForSelector('.step');
+  const persisted = await page.evaluate(() => [...document.querySelectorAll('.task')].map((t) => ({
+    task: t.querySelector('.task__title').textContent,
+    steps: [...t.querySelectorAll('.step')].map((st) => `${st.querySelector('.step__title').textContent}:${st.dataset.done}`),
+  })));
+  const q = persisted.find((x) => x.task.includes('quarterly'));
+  assert.deepEqual(q.steps, ['Speaking:true', 'Writing - 2 pages:false']);
+  assert.deepEqual(persisted.find((x) => x.task.includes('Review')).steps, ['Check CI:false']);
+  step('history, settings and task steps persist after restart');
+
+  // --- backup, then import it back (native file dialogs are stubbed in the main process)
+  const backupFile = path.join(dataDir, 'my-backup.sqlite');
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
+  }, backupFile);
+  await page.click('[data-nav="settings"]');
+  await page.click('#s-backup');
+  await waitFor(page, () => /Backup saved/.test(document.querySelector('#toasts').textContent));
+  assert.ok(fs.statSync(backupFile).size > 0);
+  step('existing "Back up database" still works');
+
+  // change data after the backup
+  await page.click('[data-nav="tasks"]');
+  await page.fill('#quick-title', 'Added after the backup');
+  await page.click('#task-quick-add button[type="submit"]');
+  await page.waitForSelector('.task >> text=Added after the backup');
+
+  // invalid file first
+  const junk = path.join(dataDir, 'not-a-backup.sqlite');
+  fs.writeFileSync(junk, 'this is not a database '.repeat(100));
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+  }, junk);
+  await page.click('[data-nav="settings"]');
+  await page.click('#s-import');
+  await waitFor(page, () => /Import failed: The selected file is not a SQLite database/.test(document.querySelector('#toasts').textContent));
+  assert.equal(await page.isVisible('#confirm'), false, 'no confirmation for an invalid file');
+  step('invalid backup file is rejected with a clear message; nothing changes');
+
+  // valid backup: confirm, then restore
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+  }, backupFile);
+  await page.click('#s-import');
+  await page.waitForSelector('#confirm[open]');
+  const warn = await page.textContent('#confirm-text');
+  assert.match(warn, /2 tasks, 3 steps and 4 sessions/);
+  assert.match(warn, /replaces all tasks/);
+  await page.click('#confirm-ok');
+  await waitFor(page, () => /Backup imported/.test(document.querySelector('#toasts').textContent));
+  const safety = fs.readdirSync(path.join(dataDir, 'backups')).filter((f) => f.startsWith('focus-neon-before-import-'));
+  assert.equal(safety.length, 1, 'automatic safety backup created');
+  await page.click('[data-nav="tasks"]');
+  await page.waitForSelector('.step');
+  assert.equal(await page.locator('.task', { hasText: 'Added after the backup' }).count(), 0);
+  assert.equal(await page.locator('.task').count(), 2);
+  assert.equal(await page.locator('.task .step').count(), 3);
+  await page.click('[data-nav="focus"]');
+  assert.equal(await page.textContent('#today-pomodoros'), '2');
+  step('import restores the backup (tasks, steps, history) after a confirmation and an automatic safety copy');
+  await page.click('[data-nav="settings"]');
+  await shot(page, '10-settings-import');
+
+  // import survives a restart
+  await app.close();
+  ({ app, page } = await launch());
+  await page.click('[data-nav="tasks"]');
+  await page.waitForSelector('.step');
+  assert.equal(await page.locator('.task').count(), 2);
+  step('imported data persists after restart');
 
   // --- restore of a running session after a hard kill
   await page.click('[data-nav="focus"]');

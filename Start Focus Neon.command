@@ -1,5 +1,5 @@
 #!/bin/bash
-# macOS launcher: double-click to start Neon Pomodoro.
+# macOS launcher: double-click to start Focus Neon.
 cd "$(dirname "$0")" || exit 1
 
 if ! command -v npm >/dev/null 2>&1; then
@@ -10,7 +10,7 @@ if ! command -v npm >/dev/null 2>&1; then
 fi
 
 if [ ! -d "node_modules/electron" ]; then
-  echo "First run: installing Neon Pomodoro (this takes a minute)..."
+  echo "First run: installing Focus Neon (this takes a minute)..."
   if ! npm install; then
     echo
     echo "Installation failed. See the messages above."

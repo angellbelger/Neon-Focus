@@ -8,12 +8,25 @@ const {
 const { createServices } = require('../core/services');
 const { registerIpc, broadcast } = require('./ipc');
 const { createTray } = require('./tray');
+const { carryOverLegacyDatabase } = require('./legacy-data');
+
+const APP_NAME = 'Focus Neon';
+const APP_ID = 'com.belger.focusneon';
 
 const ROOT = path.join(__dirname, '..');
 
-// Testing aid: NEON_POMODORO_SECONDS_PER_MINUTE=1 makes "25 minutes" last 25 seconds.
-const SECONDS_PER_MINUTE = Number(process.env.NEON_POMODORO_SECONDS_PER_MINUTE) || 60;
-if (process.env.NEON_POMODORO_DATA_DIR) app.setPath('userData', path.resolve(process.env.NEON_POMODORO_DATA_DIR));
+// Testing aid: FOCUS_NEON_SECONDS_PER_MINUTE=1 makes "25 minutes" last 25 seconds.
+const SECONDS_PER_MINUTE = Number(process.env.FOCUS_NEON_SECONDS_PER_MINUTE) || 60;
+app.setName(APP_NAME);
+if (process.env.FOCUS_NEON_DATA_DIR) app.setPath('userData', path.resolve(process.env.FOCUS_NEON_DATA_DIR));
+// Windows uses this id for notifications and taskbar grouping.
+if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
+app.setAboutPanelOptions({
+  applicationName: APP_NAME,
+  applicationVersion: app.getVersion(),
+  credits: 'Designed by Angell Belger',
+  copyright: 'Designed by Angell Belger',
+});
 
 // One instance only: two processes would mean two timers on one database.
 if (!app.requestSingleInstanceLock()) {
@@ -70,7 +83,7 @@ function createWindow() {
     minHeight: 560,
     show: false,
     backgroundColor: '#05060b',
-    title: 'Neon Pomodoro',
+    title: APP_NAME,
     icon: path.join(ROOT, 'assets', 'icons', 'icon.png'),
     autoHideMenuBar: true,
     webPreferences: {
@@ -115,7 +128,15 @@ function notifyCompletion(c) {
 }
 
 async function boot() {
-  const dbPath = path.join(app.getPath('userData'), 'neon-pomodoro.sqlite');
+  const dbPath = path.join(app.getPath('userData'), 'focus-neon.sqlite');
+  let carriedOverFrom = null;
+  if (!process.env.FOCUS_NEON_DATA_DIR) {
+    try {
+      carriedOverFrom = carryOverLegacyDatabase(app.getPath('appData'), dbPath);
+    } catch (err) {
+      console.error('[app] could not copy data from the previous app name:', err);
+    }
+  }
   services = await createServices({ dbPath, secondsPerMinute: SECONDS_PER_MINUTE });
   const { engine } = services;
 
@@ -128,7 +149,7 @@ async function boot() {
   registerIpc(services, {
     getWindow,
     dbPath,
-    startupInfo: { recoveredFrom: services.db.recoveredFrom, secondsPerMinute: SECONDS_PER_MINUTE },
+    startupInfo: { recoveredFrom: services.db.recoveredFrom, carriedOverFrom, secondsPerMinute: SECONDS_PER_MINUTE },
     onSettingsChanged: (s) => tray && tray.applySettings(s),
   });
 
@@ -198,6 +219,6 @@ app.on('window-all-closed', () => {
 app.whenReady().then(boot).catch((err) => {
   console.error(err);
   const { dialog } = require('electron');
-  dialog.showErrorBox('Neon Pomodoro could not start', String(err && err.stack || err));
+  dialog.showErrorBox('Focus Neon could not start', String(err && err.stack || err));
   app.exit(1);
 });

@@ -58,7 +58,7 @@
   window.__showStartupError = function (err) {
     var detail = (err && (err.stack || err.message)) || String(err);
     overlay(
-      'Neon Pomodoro could not start',
+      'Focus Neon could not start',
       ['Something went wrong while loading the app. The technical details are below; please send them along so the problem can be fixed.'],
       null,
       detail + (errors.length ? '\n\n' + errors.join('\n\n') : '')
@@ -69,16 +69,16 @@
     if (!window.pomodoro) {
       var fromDisk = location.protocol === 'file:';
       overlay(
-        'Open Neon Pomodoro as a desktop app',
+        'Open Focus Neon as a desktop app',
         [
           fromDisk
             ? 'You opened index.html directly in a browser. That file is only the app’s interface: the timer, the SQLite database and the charts run inside the desktop app, so nothing works from here.'
             : 'This page is running in an ordinary browser tab. The timer, the SQLite database and the charts run inside the desktop app, so nothing works from here.',
-          'Start it one of these ways from the neon-pomodoro folder (the one that contains package.json):',
+          'Start it one of these ways from the project folder (the one that contains package.json):',
         ],
         [
-          ['macOS: double-click', 'Start Neon Pomodoro.command'],
-          ['Windows: double-click', 'Start Neon Pomodoro.bat'],
+          ['macOS: double-click', 'Start Focus Neon.command'],
+          ['Windows: double-click', 'Start Focus Neon.bat'],
           ['Or in a terminal:', 'npm install   then   npm start'],
           ['Node.js must be installed first (LTS version from nodejs.org).', ''],
         ]

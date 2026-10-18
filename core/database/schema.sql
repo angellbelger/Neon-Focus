@@ -1,4 +1,4 @@
--- Neon Pomodoro — schema version 1
+-- Focus Neon — schema version 1
 -- All timestamps are ISO-8601 UTC strings with millisecond precision
 -- (e.g. 2026-10-12T17:04:05.123Z), which sort lexicographically.
 

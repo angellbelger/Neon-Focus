@@ -42,7 +42,7 @@ function createTray({ engine, settings, showWindow, quit }) {
       { label: 'Reset', enabled: active, click: () => engine.reset() },
       { label: 'Skip to next', click: () => engine.skip() },
       { type: 'separator' },
-      { label: 'Open Neon Pomodoro', click: () => showWindow('focus') },
+      { label: 'Open Focus Neon', click: () => showWindow('focus') },
       { label: 'Dashboard', click: () => showWindow('dashboard') },
       { type: 'separator' },
       { label: 'Quit', role: 'quit', click: quit },
@@ -56,7 +56,7 @@ function createTray({ engine, settings, showWindow, quit }) {
       if (process.platform === 'darwin') tray.setTitle(title, { fontType: 'monospacedDigit' });
       lastTitle = title;
     }
-    tray.setToolTip(`Neon Pomodoro — ${LABEL[s.mode]} ${s.status === 'idle' ? 'ready' : remaining}`);
+    tray.setToolTip(`Focus Neon — ${LABEL[s.mode]} ${s.status === 'idle' ? 'ready' : remaining}`);
     const key = `${s.status}|${s.mode}|${Math.ceil((s.plannedMs - s.elapsedMs) / 60000)}`;
     if (key !== lastMenuKey) {
       tray.setContextMenu(buildMenu(s));

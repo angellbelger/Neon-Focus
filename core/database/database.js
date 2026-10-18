@@ -16,7 +16,24 @@ const fs = require('fs');
 const path = require('path');
 const initSqlJs = require('sql.js');
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
+
+/** Ordered schema migrations. Each runs once, inside a transaction. */
+const MIGRATIONS = [
+  { version: 1, file: 'schema.sql' },
+  { version: 2, file: path.join('migrations', '002-task-steps.sql') },
+];
+
+/** Error with a message meant for the user (bad or incompatible import file). */
+class ImportError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ImportError';
+  }
+}
+
+const SQLITE_HEADER = Buffer.from('SQLite format 3\0', 'binary');
+const MAX_IMPORT_BYTES = 512 * 1024 * 1024;
 
 let sqlPromise = null;
 function loadSqlJs() {
@@ -58,6 +75,7 @@ class Database {
     }
 
     const instance = new Database(db, filePath);
+    instance.SQL = SQL;
     instance.recoveredFrom = recoveredFrom;
     instance.migrate();
     return instance;
@@ -74,22 +92,132 @@ class Database {
     this.db.run('PRAGMA foreign_keys = ON;');
   }
 
+  schemaVersion() {
+    const exists = this.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'");
+    if (!exists) return 0;
+    const row = this.get('SELECT MAX(version) AS v FROM schema_version');
+    return row && row.v ? row.v : 0;
+  }
+
+  /** Brings the schema up to SCHEMA_VERSION, one migration at a time. */
   migrate() {
     this.db.run('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);');
-    const row = this.get('SELECT MAX(version) AS v FROM schema_version');
-    const current = row && row.v ? row.v : 0;
-    if (current < 1) {
-      const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
-      this.transaction(() => {
-        this.db.exec(schema);
-        this.db.run('INSERT INTO schema_version (version) VALUES (?)', [1]);
-      });
-    }
-    // Future migrations: if (current < 2) { ... }
+    const current = this.schemaVersion();
     if (current > SCHEMA_VERSION) {
       throw new Error(`Database was created by a newer version of the app (schema ${current}).`);
     }
+    for (const m of MIGRATIONS) {
+      if (current >= m.version) continue;
+      const sql = fs.readFileSync(path.join(__dirname, m.file), 'utf8');
+      this.transaction(() => {
+        this.db.exec(sql);
+        this.db.run('INSERT INTO schema_version (version) VALUES (?)', [m.version]);
+      });
+    }
     this.persist();
+  }
+
+  /**
+   * Validates a backup file before it is imported. The file is opened in
+   * memory only (never on top of the live database), checked for integrity
+   * and for the tables this app needs, upgraded to the current schema, and
+   * exported again. Throws ImportError with a readable message if anything
+   * is wrong.
+   *
+   * @param {Buffer} bytes
+   * @returns {Promise<{bytes: Uint8Array, summary: object}>}
+   */
+  static async prepareImport(bytes) {
+    const SQL = await loadSqlJs();
+    if (!bytes || bytes.length === 0) throw new ImportError('The selected file is empty.');
+    if (bytes.length > MAX_IMPORT_BYTES) throw new ImportError('The selected file is too large to be a Focus Neon backup.');
+    if (bytes.length < 512 || !Buffer.from(bytes.subarray(0, 16)).equals(SQLITE_HEADER)) {
+      throw new ImportError('The selected file is not a SQLite database. Choose a backup created with "Back up database".');
+    }
+
+    let raw;
+    try {
+      raw = new SQL.Database(bytes);
+    } catch (_) {
+      throw new ImportError('The selected file could not be opened as a database. It may be damaged.');
+    }
+
+    const candidate = new Database(raw, null);
+    try {
+      let ok = false;
+      try {
+        const check = raw.exec('PRAGMA integrity_check');
+        ok = Boolean(check[0] && check[0].values[0][0] === 'ok');
+      } catch (_) { ok = false; }
+      if (!ok) throw new ImportError('The backup file is damaged (integrity check failed) and was not imported.');
+
+      const tables = new Set(candidate.all("SELECT name FROM sqlite_master WHERE type = 'table'").map((r) => r.name));
+      for (const t of ['schema_version', 'tasks', 'sessions', 'settings']) {
+        if (!tables.has(t)) {
+          throw new ImportError('This database is not a Focus Neon backup (required tables are missing).');
+        }
+      }
+      const version = candidate.schemaVersion();
+      if (version < 1) throw new ImportError('This database is not a Focus Neon backup (unknown format).');
+      if (version > SCHEMA_VERSION) {
+        throw new ImportError('This backup was created by a newer version of Focus Neon. Update the app, then import it again.');
+      }
+
+      // Structure check: the columns the app relies on must exist.
+      try {
+        candidate.all('SELECT id, title, description, estimated_pomodoros, status, created_at, updated_at, completed_at FROM tasks LIMIT 1');
+        candidate.all(`SELECT id, run_id, task_id, task_title, session_type, planned_duration_seconds, actual_duration_seconds,
+                              started_at, ended_at, status, completed FROM sessions LIMIT 1`);
+        candidate.all('SELECT setting_key, setting_value, updated_at FROM settings LIMIT 1');
+      } catch (_) {
+        throw new ImportError('This database has an incompatible structure and cannot be imported.');
+      }
+
+      try {
+        candidate.migrate();
+      } catch (_) {
+        throw new ImportError('This backup could not be upgraded to the current format. Nothing was changed.');
+      }
+
+      const fk = candidate.all('PRAGMA foreign_key_check');
+      if (fk.length) throw new ImportError('The backup contains broken links between records and was not imported.');
+
+      const one = (sql) => Object.values(candidate.get(sql))[0];
+      const summary = {
+        schemaVersion: version,
+        tasks: one('SELECT COUNT(*) FROM tasks'),
+        steps: one('SELECT COUNT(*) FROM task_steps'),
+        sessions: one('SELECT COUNT(*) FROM sessions'),
+        pomodoros: one("SELECT COUNT(*) FROM sessions WHERE session_type = 'focus' AND completed = 1"),
+        firstSessionAt: one('SELECT MIN(started_at) FROM sessions'),
+        lastSessionAt: one('SELECT MAX(ended_at) FROM sessions'),
+      };
+      return { bytes: raw.export(), summary };
+    } finally {
+      raw.close();
+    }
+  }
+
+  /**
+   * Replaces the whole live database with an already-validated image.
+   * The file on disk is swapped atomically (temp file + rename); if writing
+   * fails, the previous database stays in memory and on disk unchanged.
+   */
+  replaceWith(bytes) {
+    if (this.txDepth > 0) throw new Error('Cannot replace the database during a transaction.');
+    const next = new this.SQL.Database(bytes);
+    const prev = this.db;
+    this.db = next;
+    this.applyPragmas();
+    try {
+      this.persist();
+    } catch (err) {
+      this.db = prev;
+      next.close();
+      this.applyPragmas();
+      throw err;
+    }
+    prev.close();
   }
 
   /** Returns all rows as plain objects. Always parameterised. */
@@ -177,4 +305,4 @@ class Database {
   }
 }
 
-module.exports = { Database, SCHEMA_VERSION };
+module.exports = { Database, SCHEMA_VERSION, ImportError };

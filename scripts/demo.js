@@ -18,7 +18,7 @@ const { createServices } = require('../core/services');
 async function seed(dataDir) {
   fs.rmSync(dataDir, { recursive: true, force: true });
   fs.mkdirSync(dataDir, { recursive: true });
-  const svc = await createServices({ dbPath: path.join(dataDir, 'neon-pomodoro.sqlite') });
+  const svc = await createServices({ dbPath: path.join(dataDir, 'focus-neon.sqlite') });
   const titles = ['Write the quarterly report', 'Review pull requests', 'Study machine learning', 'Plan next sprint', 'Read research paper'];
   const tasks = titles.map((title, i) => svc.tasksRepo.create({ title, estimatedPomodoros: [80, null, 90, 12, 60][i] }));
 
@@ -60,14 +60,14 @@ async function seed(dataDir) {
 module.exports = { seed };
 
 if (require.main === module) {
-  const dataDir = process.argv[2] || path.join(os.tmpdir(), 'neon-pomodoro-demo');
+  const dataDir = process.argv[2] || path.join(os.tmpdir(), 'focus-neon-demo');
   seed(dataDir).then((n) => {
     console.log(`Demo database with ${n} generated sessions: ${dataDir}`);
     if (process.argv.includes('--no-launch')) return;
     const electron = require('electron');
     const child = spawn(electron, ['.'], {
       cwd: path.join(__dirname, '..'), stdio: 'inherit',
-      env: { ...process.env, NEON_POMODORO_DATA_DIR: dataDir },
+      env: { ...process.env, FOCUS_NEON_DATA_DIR: dataDir },
     });
     child.on('close', (code) => process.exit(code ?? 0));
   });

@@ -5,11 +5,14 @@
  * Electron's main process exposes a narrow, validated subset of this over IPC.
  */
 
-const { Database } = require('./database/database');
+const fs = require('fs');
+const path = require('path');
+const { Database, ImportError } = require('./database/database');
 const { SettingsRepository } = require('./database/repositories/settings-repository');
 const { TasksRepository } = require('./database/repositories/tasks-repository');
 const { SessionsRepository } = require('./database/repositories/sessions-repository');
 const { StateRepository } = require('./database/repositories/state-repository');
+const { StepsRepository } = require('./database/repositories/steps-repository');
 const { TimerEngine } = require('./timer-engine');
 const stats = require('./stats');
 
@@ -27,6 +30,7 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
   const tasksRepo = new TasksRepository(db, clock);
   const sessionsRepo = new SessionsRepository(db);
   const stateRepo = new StateRepository(db);
+  const stepsRepo = new StepsRepository(db, clock);
   const engine = new TimerEngine({
     db, stateRepo, sessionsRepo, tasksRepo, settingsRepo, clock, secondsPerMinute, ...engineOptions,
   });
@@ -72,11 +76,58 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
     return `${lines.join('\r\n')}\r\n`;
   }
 
+  /** Tasks with their ordered steps and step counts attached. */
+  function listTasks(status = 'all') {
+    const tasks = tasksRepo.list({ status });
+    const steps = stepsRepo.forTasks(tasks.map((t) => t.id));
+    return tasks.map((t) => {
+      const list = steps.get(t.id) || [];
+      return { ...t, steps: list, steps_total: list.length, steps_done: list.filter((s) => s.completed).length };
+    });
+  }
+
+  /** Validates a backup in memory. Nothing is changed. */
+  function prepareImport(bytes) {
+    return Database.prepareImport(bytes);
+  }
+
+  /**
+   * Replaces all data with a validated backup (from prepareImport).
+   * 1. refuses while a session is in progress,
+   * 2. saves a safety copy of the current database into safetyDir,
+   * 3. swaps the database atomically, then reloads the timer from the new data.
+   */
+  function applyImport(prepared, { safetyDir }) {
+    if (!prepared || !prepared.bytes) throw new ImportError('Choose a backup file first.');
+    if (engine.active) {
+      throw new ImportError('Finish or reset the current session before importing a backup.');
+    }
+    fs.mkdirSync(safetyDir, { recursive: true });
+    const d = new Date(clock());
+    const p2 = (n) => String(n).padStart(2, '0');
+    const name = `focus-neon-before-import-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}.sqlite`;
+    const safetyBackup = path.join(safetyDir, name);
+    db.backupTo(safetyBackup);
+    if (!fs.existsSync(safetyBackup) || fs.statSync(safetyBackup).size === 0) {
+      throw new ImportError('A safety copy of your current data could not be saved, so nothing was imported.');
+    }
+
+    db.replaceWith(prepared.bytes);
+
+    engine.active = null;
+    engine.lastCompletion = null;
+    engine.notice = null;
+    engine.settings = settingsRepo.getAll();
+    engine.init(); // restores any session saved in the backup as paused
+    return { safetyBackup, summary: prepared.summary };
+  }
+
   /** Deletes all sessions, tasks and timer state. Settings are kept. */
   function clearAllData() {
     db.transaction(() => {
       db.run('DELETE FROM active_session');
       db.run('DELETE FROM sessions');
+      db.run('DELETE FROM task_steps');
       db.run('DELETE FROM tasks');
       db.run('DELETE FROM app_state');
     });
@@ -87,8 +138,8 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
   }
 
   return {
-    db, settingsRepo, tasksRepo, sessionsRepo, stateRepo, engine,
-    report, today, exportCsv, clearAllData,
+    db, settingsRepo, tasksRepo, sessionsRepo, stateRepo, stepsRepo, engine,
+    report, today, exportCsv, clearAllData, listTasks, prepareImport, applyImport,
   };
 }
 

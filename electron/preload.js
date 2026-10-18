@@ -42,6 +42,10 @@ contextBridge.exposeInMainWorld('pomodoro', {
     setStatus: (id, status) => call('tasks:setStatus', id, status),
     remove: (id) => call('tasks:delete', id),
     sessions: (id) => call('tasks:sessions', id),
+    addStep: (taskId, title) => call('steps:create', taskId, title),
+    renameStep: (stepId, title) => call('steps:rename', stepId, title),
+    setStepCompleted: (stepId, completed) => call('steps:setCompleted', stepId, completed),
+    removeStep: (stepId) => call('steps:delete', stepId),
   },
   stats: {
     report: (period, anchor) => call('stats:report', period, anchor),
@@ -59,6 +63,9 @@ contextBridge.exposeInMainWorld('pomodoro', {
   data: {
     exportCsv: () => call('data:exportCsv'),
     backup: () => call('data:backup'),
+    pickImport: () => call('data:importPick'),
+    applyImport: () => call('data:importApply'),
+    cancelImport: () => call('data:importCancel'),
     clearAll: () => call('data:clearAll'),
     revealDatabase: () => call('data:reveal'),
     onChanged: (cb) => subscribe('data:changed', cb),
