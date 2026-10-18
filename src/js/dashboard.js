@@ -6,6 +6,7 @@ import { $, h, radioGroup, toastError } from './ui.js';
 import { duration, durationParts, periodLabel, bucketLabel, dateShort, dateLong, monthName, weekday, plural } from './format.js';
 import { renderLineChart } from './charts.js';
 import { registerPage, currentPage } from './navigation.js';
+import { initActivity, activityVisible, refreshActivity } from './activity.js';
 
 const state = { period: 'day', anchor: Date.now(), compare: 'focus', report: null, loading: 0 };
 
@@ -213,7 +214,7 @@ async function load() {
 }
 
 export function initDashboard() {
-  const periods = radioGroup($('.page--dashboard .segmented'), 'period', (p) => {
+  const periods = radioGroup($('.page--dashboard .segmented[aria-label="Period"]'), 'period', (p) => {
     state.period = p;
     periods.set(p);
     load();
@@ -230,7 +231,8 @@ export function initDashboard() {
   $('#dash-next').addEventListener('click', () => { state.anchor = shift(state.period, state.anchor, 1); load(); });
   $('#dash-today').addEventListener('click', () => { state.anchor = Date.now(); load(); });
 
-  registerPage('dashboard', { onShow: load });
-  api.data.onChanged(() => { if (currentPage() === 'dashboard') load(); });
+  initActivity({ onOverview: load });
+  registerPage('dashboard', { onShow: () => (activityVisible() ? refreshActivity() : load()) });
+  api.data.onChanged(() => { if (currentPage() === 'dashboard' && !activityVisible()) load(); });
   store.on('settings', () => { if (currentPage() === 'dashboard') load(); });
 }

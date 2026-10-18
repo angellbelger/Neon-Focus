@@ -3,7 +3,7 @@
 
 import { $, $$ } from './ui.js';
 
-const PAGES = ['focus', 'dashboard', 'tasks', 'history', 'settings'];
+const PAGES = ['focus', 'agenda', 'tasks', 'goals', 'dashboard', 'history', 'settings'];
 const hooks = new Map();
 let current = null;
 const changeListeners = new Set();
@@ -52,7 +52,7 @@ export function initNavigation() {
     if (target) navigate(target.dataset.nav);
   });
   document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[1-5]$/.test(e.key)) {
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[1-7]$/.test(e.key)) {
       e.preventDefault();
       navigate(PAGES[Number(e.key) - 1]);
     }

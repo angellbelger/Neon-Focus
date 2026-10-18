@@ -206,14 +206,14 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   await page.click('[data-nav="focus"]');
   assert.equal(await page.title(), 'Focus Neon');
   assert.equal(await app.evaluate(({ app: a }) => a.getName()), 'Focus Neon');
-  for (const p of ['focus', 'dashboard', 'tasks', 'history', 'settings']) {
+  for (const p of ['focus', 'agenda', 'tasks', 'goals', 'dashboard', 'history', 'settings']) {
     await page.click(`.rail [data-nav="${p}"]`);
     await page.locator('.credit').scrollIntoViewIfNeeded();
     assert.ok(await page.isVisible('.credit'), `footer on ${p}`);
     assert.equal((await page.textContent('.credit')).trim(), 'Designed by Angell Belger');
   }
   assert.equal(await page.locator('.credit').count(), 1, 'footer is one shared element');
-  step('app is named Focus Neon; footer credit shows on all five pages');
+  step('app is named Focus Neon; footer credit shows on all seven pages');
 
   // --- task steps
   await page.click('[data-nav="tasks"]');
@@ -334,6 +334,211 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   await page.waitForSelector('.step');
   assert.equal(await page.locator('.task').count(), 2);
   step('imported data persists after restart');
+
+  // ================================================================ Agenda, tags, goals, activity
+  const todayKey = await page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
+  const addDaysKey = (key, n) => { const [y, m, d] = key.split('-').map(Number); const dt = new Date(y, m - 1, d + n); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; };
+  const tomorrowKey = addDaysKey(todayKey, 1);
+
+  // tags: create in the manager, reuse on two tasks
+  await page.click('[data-nav="tasks"]');
+  await page.click('#tags-manage');
+  await page.fill('#tag-manager-new', 'English');
+  await page.click('#tag-manager-create');
+  await page.waitForSelector('#tag-manager-list .tag-admin__name');
+  await page.fill('#tag-manager-new', 'Work');
+  await page.press('#tag-manager-new', 'Enter');
+  await waitFor(page, () => document.querySelectorAll('#tag-manager-list .tag-admin__row').length === 2);
+  await page.fill('#tag-manager-new', 'english');
+  await page.click('#tag-manager-create');
+  await waitFor(page, () => /already exists/.test(document.querySelector('#tag-manager-error').textContent));
+  await page.click('#tag-manager button[value="close"]');
+  step('tags created in the tag manager; duplicate names are refused');
+
+  // tasks with dates: one today tagged English, one tomorrow, one untagged "English" by title only
+  const addTask = async (title, date) => {
+    await page.fill('#quick-title', title);
+    await page.fill('#quick-date', date);
+    await page.click('#task-quick-add button[type="submit"]');
+    await page.waitForSelector(`.task >> text=${title}`);
+  };
+  await addTask('English Listening Practice', todayKey);
+  await addTask('English Writing Practice', tomorrowKey);
+  await addTask('English but no tag', todayKey);
+  const tagTask = async (title, tagName) => {
+    await page.locator('.task', { hasText: title }).locator('[aria-label^="Tags of"]').click();
+    await page.waitForSelector('#tag-picker[open]');
+    await page.locator('#tag-picker-list label', { hasText: tagName }).locator('input').check();
+    await page.click('#tag-picker-save');
+    await waitFor(page, () => !document.querySelector('#tag-picker').open);
+  };
+  await tagTask('English Listening Practice', 'English');
+  await tagTask('English Writing Practice', 'English');
+  await waitFor(page, () => [...document.querySelectorAll('.task')].filter((t) => t.querySelector('.tag')?.textContent === 'English').length === 2);
+  step('one tag reused on two tasks; chips shown in Tasks');
+
+  // agenda shows tasks on their dates
+  await page.click('[data-nav="agenda"]');
+  await page.waitForSelector(`.ag-day[data-date="${todayKey}"]`);
+  const order = await page.locator('.ag-day').evaluateAll((els) => els.map((e) => e.dataset.date));
+  assert.equal(order.length, 7);
+  assert.equal(order[0], todayKey, 'today is at the top');
+  assert.deepEqual(order, [0, 1, 2, 3, 4, 5, 6].map((n) => addDaysKey(todayKey, -n)), 'then the six previous days, newest first');
+  step('Agenda opens with today at the top, then the previous six days in descending order');
+  const dayTitles = async (key) => page.locator(`.ag-day[data-date="${key}"] .ag-task__title`).allTextContents();
+  assert.ok((await dayTitles(todayKey)).includes('English Listening Practice'));
+  assert.ok((await dayTitles(todayKey)).includes('English but no tag'));
+  if (await page.locator(`.ag-day[data-date="${tomorrowKey}"]`).count() === 0) await page.click('#ag-next');
+  await page.waitForSelector(`.ag-day[data-date="${tomorrowKey}"]`);
+  assert.ok((await dayTitles(tomorrowKey)).includes('English Writing Practice'));
+  assert.equal(await page.locator(`.ag-day[data-date="${tomorrowKey}"] .tag`).first().textContent(), 'English');
+  await page.click('#ag-today');
+  await page.waitForSelector(`.ag-day[data-date="${todayKey}"]`);
+  step('tasks appear in the Agenda on their scheduled days, with their tags');
+
+  // complete from the agenda -> Tasks shows it completed (and back)
+  await page.locator(`.ag-day[data-date="${todayKey}"] .ag-task`, { hasText: 'English but no tag' }).locator('.ag-task__check').click();
+  await waitFor(page, (k) => document.querySelector(`.ag-day[data-date="${k}"] .ag-task[data-status="completed"]`) !== null, todayKey);
+  await page.click('[data-nav="tasks"]');
+  await page.click('[data-task-filter="completed"]');
+  await page.waitForSelector('.task >> text=English but no tag');
+  await page.locator('.task', { hasText: 'English but no tag' }).locator('.task__check').click();
+  await page.click('[data-task-filter="all"]');
+  await waitFor(page, () => [...document.querySelectorAll('.task')].some((t) => t.textContent.includes('English but no tag') && t.dataset.status === 'active'));
+  await page.click('[data-nav="agenda"]');
+  await waitFor(page, (k) => [...document.querySelectorAll(`.ag-day[data-date="${k}"] .ag-task`)].some((t) => t.textContent.includes('English but no tag') && t.dataset.status === 'active'), todayKey);
+  step('completing in either section updates the other');
+
+  // TTP / H.E. update as sessions are recorded
+  const dayStats = (k) => page.evaluate((key) => window.pomodoro.agenda.days(key, 1).then((r) => r.days[0]), k);
+  const before = await dayStats(todayKey);
+  const ttpText = () => page.textContent(`.ag-day[data-date="${todayKey}"] .ag-day__stats dd`);
+  assert.equal(await ttpText(), String(before.ttp));
+  const runPomodoroOn = async (title) => {
+    await page.evaluate(async (t) => {
+      const tasks = await window.pomodoro.tasks.list('all');
+      const task = tasks.find((x) => x.title === t);
+      const s = await window.pomodoro.timer.getState();
+      if (s.status !== 'idle') await window.pomodoro.timer.reset();
+      if ((await window.pomodoro.timer.getState()).mode !== 'focus') await window.pomodoro.timer.setMode('focus');
+      await window.pomodoro.timer.setTask(task ? task.id : null);
+      await window.pomodoro.timer.start();
+    }, title);
+    await waitFor(page, () => window.pomodoro.timer.getState().then((s) => s.status === 'idle' && s.mode !== 'focus'), null, { timeout: 15000 });
+  };
+  await runPomodoroOn('English Listening Practice');
+  await waitFor(page, (n) => document.querySelector(`.ag-day[data-date="${n.k}"] .ag-day__stats dd`).textContent === String(n.v), { k: todayKey, v: before.ttp + 1 });
+  await runPomodoroOn('English but no tag');
+  const after = await dayStats(todayKey);
+  assert.equal(after.ttp, before.ttp + 2);
+  assert.equal(after.hoursSeconds - before.hoursSeconds, 4, 'only the English-tagged session adds to H.E. (4 s in fast mode)');
+  step(`TTP updates live (${before.ttp} -> ${after.ttp}); H.E. counts only the English-tagged session`);
+
+  // daily notes: create, edit, delete; persist after restart
+  await page.click(`.ag-day[data-date="${todayKey}"] .ag-tool--note`);
+  await page.fill(`.ag-day[data-date="${todayKey}"] .ag-note__input`, "New Year's Eve with my daughter.");
+  await page.click(`.ag-day[data-date="${todayKey}"] .ag-note .btn--accent`);
+  await page.waitForSelector(`.ag-day[data-date="${todayKey}"] .ag-note__text`);
+  await page.click(`.ag-day[data-date="${todayKey}"] .ag-note__text`);
+  await page.fill(`.ag-day[data-date="${todayKey}"] .ag-note__input`, "New Year's Eve with my daughter. Fireworks!");
+  await page.press(`.ag-day[data-date="${todayKey}"] .ag-note__input`, 'Control+Enter');
+  await waitFor(page, (k) => document.querySelector(`.ag-day[data-date="${k}"] .ag-note__text`)?.textContent.endsWith('Fireworks!'), todayKey);
+  step('daily note created and edited');
+
+  // year navigation: only years with data
+  await page.evaluate(() => window.pomodoro.tasks.create({ title: 'Old planner entry', scheduledDate: '2024-05-10' }));
+  await page.click('[data-nav="tasks"]');
+  await page.click('[data-nav="agenda"]');
+  await waitFor(page, () => document.querySelectorAll('#ag-years .planner').length >= 2);
+  const yearsShown = await page.locator('#ag-years .planner__year').allTextContents();
+  const nowYear = String(new Date().getFullYear());
+  assert.deepEqual(yearsShown, ['2024', nowYear], 'no empty years such as 2025');
+  await page.locator('#ag-years .planner', { hasText: '2024' }).click();
+  await page.waitForSelector('.ag-day[data-date="2024-12-31"]');
+  assert.equal(await page.locator('.ag-day').first().getAttribute('data-date'), '2024-12-31', 'a past planner opens on its last day');
+  assert.equal(await page.locator('#ag-years .planner[aria-current="true"] .planner__year').textContent(), '2024');
+  await page.click('#ag-today');
+  await page.waitForSelector(`.ag-day[data-date="${todayKey}"]`);
+  assert.equal(await page.locator('.ag-day').first().getAttribute('data-date'), todayKey);
+  step(`year planners: ${yearsShown.join(', ')} (empty years hidden); switching keeps data`);
+  await shot(page, '11-agenda');
+
+  // goals: create with milestones, neon progress; activity goal from the English tag
+  await page.click('[data-nav="goals"]');
+  await page.click('#goal-new');
+  await page.fill('#goal-editor-form [name="title"]', 'Complete my research project');
+  await page.fill('#goal-editor-form [name="start"]', '2026-01');
+  await page.fill('#goal-editor-form [name="plan"]', 'Read, write, review.');
+  await page.click('#goal-editor-form button[value="save"]');
+  await page.waitForSelector('.goal >> text=Complete my research project');
+  const goal = () => page.locator('.goal', { hasText: 'Complete my research project' });
+  for (const m of ['Literature review', 'Experiments', 'Writing', 'Submission', 'PhD application']) {
+    if (await goal().locator('.ms__edit').count() === 0) await goal().locator('.ms-add__btn').click();
+    await goal().locator('.ms__edit').fill(m);
+    await goal().locator('.ms__edit').press('Enter');
+    await waitFor(page, (t) => [...document.querySelectorAll('.ms__title')].some((x) => x.textContent === t), m);
+  }
+  await page.keyboard.press('Escape');
+  for (const m of ['Literature review', 'Experiments', 'Writing']) {
+    await goal().locator('.ms', { hasText: m }).locator('.ms__mark').click();
+    await waitFor(page, (t) => [...document.querySelectorAll('.ms')].some((x) => x.textContent.includes(t) && x.dataset.status === 'done'), m);
+  }
+  await goal().locator('.ms', { hasText: 'PhD application' }).hover();
+  await goal().locator('.ms', { hasText: 'PhD application' }).locator('.ms__btn', { hasText: 'Drop' }).click();
+  await waitFor(page, () => /75%/.test([...document.querySelectorAll('.goal')].find((g) => g.textContent.includes('research project')).querySelector('.evo__pct').textContent));
+  const fillColor = await goal().locator('.evo__fill').evaluate((el) => getComputedStyle(el).backgroundImage);
+  assert.match(fillColor, /57, 255, 20/, 'neon-green bar');
+  step('goal created; milestones done/dropped drive the neon-green bar to 75%');
+
+  await page.click('#goal-new');
+  await page.fill('#goal-editor-form [name="title"]', 'Study English for 200 hours');
+  await page.check('#goal-editor-form [name="mode"][value="activity"]');
+  await page.selectOption('#goal-editor-form [name="tag"]', { label: 'English' });
+  await page.fill('#goal-editor-form [name="hours"]', '200');
+  await page.click('#goal-editor-form button[value="save"]');
+  await page.waitForSelector('.goal >> text=Study English for 200 hours');
+  const detail = await page.locator('.goal', { hasText: 'Study English for 200 hours' }).locator('.evo__detail').textContent();
+  assert.match(detail, /of 200 h on English/);
+  await page.locator('.goal', { hasText: 'Complete my research project' }).locator('button', { hasText: 'Mark as achieved' }).click();
+  await page.click('[data-goal-filter="completed"]');
+  await waitFor(page, () => document.querySelectorAll('.goal').length === 1 && document.querySelector('.goal').textContent.includes('research'));
+  await page.click('[data-goal-filter="all"]');
+  step('activity goal tracks English time; goals can be marked achieved and filtered');
+  await shot(page, '12-goals');
+
+  // activity statistics: English across tasks; untagged session excluded
+  await page.click('[data-nav="dashboard"]');
+  await page.click('[data-dash-view="activity"]');
+  await page.click('[data-act-range="today"]');
+  await page.waitForSelector('#act-body tr');
+  const engRow = page.locator('#act-body tr', { hasText: 'English' });
+  assert.equal(await engRow.locator('td').first().textContent(), '1');
+  assert.equal(await page.locator('#act-foot tr', { hasText: 'No tag' }).locator('td').first().textContent(), String(after.ttp - 1));
+  await page.click('[data-act-range="custom"]');
+  await page.fill('#act-from', '2020-01-01');
+  await page.dispatchEvent('#act-from', 'change');
+  await waitFor(page, () => /2020/.test(document.querySelector('#act-range-label').textContent));
+  await page.click('[data-act-range="all"]');
+  await waitFor(page, () => /All recorded history/.test(document.querySelector('#act-range-label').textContent));
+  assert.equal(await page.locator('#act-detail .act-figures dd').first().textContent(), '1');
+  step('Activity Statistics: per-tag totals, untagged excluded, ranges incl. custom and all time');
+  await shot(page, '13-activity');
+  await page.click('[data-dash-view="overview"]');
+
+  // everything persists after a restart
+  await app.close();
+  ({ app, page } = await launch());
+  await page.click('[data-nav="agenda"]');
+  await waitFor(page, (k) => document.querySelector(`.ag-day[data-date="${k}"] .ag-note__text`)?.textContent.endsWith('Fireworks!'), todayKey);
+  await page.click('[data-nav="goals"]');
+  await page.waitForSelector('.goal >> text=Complete my research project');
+  // delete the note
+  await page.click('[data-nav="agenda"]');
+  await page.click(`.ag-day[data-date="${todayKey}"] .ag-note__text`);
+  await page.click(`.ag-day[data-date="${todayKey}"] .ag-note__del`);
+  await page.click('#confirm-ok');
+  await waitFor(page, (k) => !document.querySelector(`.ag-day[data-date="${k}"] .ag-note__text`), todayKey);
+  step('notes, goals and tags persist after restart; note deleted');
 
   // --- restore of a running session after a hard kill
   await page.click('[data-nav="focus"]');

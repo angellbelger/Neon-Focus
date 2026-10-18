@@ -28,6 +28,8 @@
   --amber: #ffb65c;
   --emerald: #4dffb0;
   --danger: #ff5c7a;
+  --neon-green: #39ff14;    /* Goals progress bar */
+  --ink: #ff7aa2;           /* hand-written notes, like red pen in the planner */
 
   --focus: var(--cyan);
   --short: var(--amber);

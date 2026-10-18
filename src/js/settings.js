@@ -78,6 +78,10 @@ function valueOf(el) {
 
 function backupDescription(sum) {
   const parts = [plural(sum.tasks, 'task'), plural(sum.steps, 'step'), plural(sum.sessions, 'session')];
+  const extra = [];
+  if (sum.tags) extra.push(plural(sum.tags, 'tag'));
+  if (sum.notes) extra.push(plural(sum.notes, 'daily note'));
+  if (sum.goals) extra.push(plural(sum.goals, 'goal'));
   let range = '';
   if (sum.firstSessionAt && sum.lastSessionAt) {
     const day = (iso) => { const ms = Date.parse(iso); return `${dateShort(ms)} ${new Date(ms).getFullYear()}`; };
@@ -85,7 +89,7 @@ function backupDescription(sum) {
     const b = day(sum.lastSessionAt);
     range = a === b ? ` recorded on ${a}` : ` recorded between ${a} and ${b}`;
   }
-  return `${parts[0]}, ${parts[1]} and ${parts[2]}${range} (${plural(sum.pomodoros, 'Pomodoro')})`;
+  return `${parts[0]}, ${parts[1]} and ${parts[2]}${range} (${plural(sum.pomodoros, 'Pomodoro')})${extra.length ? `, plus ${extra.join(', ')}` : ''}`;
 }
 
 async function importDatabase() {
@@ -177,12 +181,12 @@ export function initSettings() {
   });
   $('#s-clear').addEventListener('click', async () => {
     const ok = await confirmAction({
-      title: 'Delete all sessions and tasks?',
-      text: 'Your whole history, every task and all statistics will be permanently deleted. Settings are kept. Consider backing up the database first.',
+      title: 'Delete all data?',
+      text: 'Your whole history, every task, step, tag, daily note and goal, and all statistics will be permanently deleted. Settings are kept. Consider backing up the database first.',
       ok: 'Delete everything',
     });
     if (!ok) return;
-    try { await api.data.clearAll(); toast('All sessions and tasks were deleted.'); } catch (err) { toastError(err); }
+    try { await api.data.clearAll(); toast('All data was deleted.'); } catch (err) { toastError(err); }
   });
 
   store.on('settings', (s) => { applyAppearance(s); fill(s); });

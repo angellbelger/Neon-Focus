@@ -32,6 +32,21 @@ function broadcast(channel, payload) {
   }
 }
 
+/** {from, to} in ms; either may be missing (open-ended). */
+function cleanRange(r) {
+  const out = {};
+  if (r.from !== undefined && r.from !== null) {
+    out.from = Number(r.from);
+    if (!Number.isFinite(out.from)) throw new Error('Invalid start of range.');
+  }
+  if (r.to !== undefined && r.to !== null) {
+    out.to = Number(r.to);
+    if (!Number.isFinite(out.to)) throw new Error('Invalid end of range.');
+  }
+  if (out.from !== undefined && out.to !== undefined && out.from > out.to) throw new Error('The start date is after the end date.');
+  return out;
+}
+
 function stamp() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -39,7 +54,7 @@ function stamp() {
 }
 
 function registerIpc(svc, { getWindow, dbPath, onSettingsChanged, startupInfo }) {
-  const { engine, tasksRepo, sessionsRepo, settingsRepo, stepsRepo } = svc;
+  const { engine, tasksRepo, sessionsRepo, settingsRepo, stepsRepo, tagsRepo, notesRepo, goalsRepo } = svc;
   let pendingImport = null; // validated backup waiting for the user's confirmation
   const dataChanged = () => broadcast('data:changed', { at: Date.now() });
 
@@ -59,12 +74,19 @@ function registerIpc(svc, { getWindow, dbPath, onSettingsChanged, startupInfo })
     return svc.listTasks(status);
   });
   handle('tasks:create', (_e, t = {}) => {
-    const task = tasksRepo.create({ title: t.title, description: t.description, estimatedPomodoros: t.estimatedPomodoros });
+    const task = tasksRepo.create({
+      title: t.title, description: t.description, estimatedPomodoros: t.estimatedPomodoros,
+      scheduledDate: t.scheduledDate, goalId: t.goalId,
+    });
+    if (Array.isArray(t.tagIds) && t.tagIds.length) tagsRepo.setTaskTags(task.id, t.tagIds);
     dataChanged();
     return task;
   });
   handle('tasks:update', (_e, id, t = {}) => {
-    const task = tasksRepo.update(id, { title: t.title, description: t.description, estimatedPomodoros: t.estimatedPomodoros });
+    const task = tasksRepo.update(id, {
+      title: t.title, description: t.description, estimatedPomodoros: t.estimatedPomodoros,
+      scheduledDate: t.scheduledDate, goalId: t.goalId,
+    });
     engine.emitState();
     dataChanged();
     return task;
@@ -84,6 +106,48 @@ function registerIpc(svc, { getWindow, dbPath, onSettingsChanged, startupInfo })
     return removed;
   });
   handle('tasks:sessions', (_e, id) => tasksRepo.sessionsFor(id));
+
+  // ---- tags
+  handle('tags:list', () => tagsRepo.list());
+  handle('tags:create', (_e, t = {}) => { const tag = tagsRepo.create({ name: t.name, color: t.color }); dataChanged(); return tag; });
+  handle('tags:update', (_e, id, t = {}) => {
+    const tag = tagsRepo.update(id, { name: t.name, color: t.color });
+    dataChanged();
+    return tag;
+  });
+  handle('tags:delete', (_e, id) => { const ok = tagsRepo.delete(id); dataChanged(); return ok; });
+  handle('tasks:setTags', (_e, taskId, tagIds, opts = {}) => {
+    const r = tagsRepo.setTaskTags(taskId, tagIds, { applyToPast: opts.applyToPast === true });
+    dataChanged();
+    return r;
+  });
+  handle('tasks:pastSessions', (_e, taskId) => tagsRepo.pastSessionCount(taskId));
+
+  // ---- agenda & notes
+  handle('agenda:days', (_e, startDate, count) => svc.agendaDays(startDate, count));
+  handle('agenda:years', () => svc.agendaYears());
+  handle('notes:save', (_e, date, body) => { const n = notesRepo.save(date, body); dataChanged(); return n; });
+  handle('notes:delete', (_e, date) => { const ok = notesRepo.delete(date); dataChanged(); return ok; });
+
+  // ---- activity statistics
+  handle('activity:stats', (_e, range = {}) => svc.activityStats(cleanRange(range)));
+  handle('activity:detail', (_e, tagId, range = {}) => svc.activityDetail(tagId, cleanRange(range)));
+
+  // ---- goals
+  handle('goals:list', (_e, year) => svc.listGoals(year));
+  handle('goals:years', () => svc.goalYears());
+  handle('goals:options', () => goalsRepo.all());
+  handle('goals:create', (_e, g = {}) => { const r = goalsRepo.create(g); dataChanged(); return r; });
+  handle('goals:update', (_e, id, g = {}) => { const r = goalsRepo.update(id, g); dataChanged(); return r; });
+  handle('goals:setCompleted', (_e, id, done) => { const r = goalsRepo.setCompleted(id, done === true); dataChanged(); return r; });
+  handle('goals:delete', (_e, id) => { const r = goalsRepo.delete(id); dataChanged(); return r; });
+  handle('milestones:create', (_e, goalId, title) => { goalsRepo.addMilestone(goalId, title); dataChanged(); return true; });
+  handle('milestones:update', (_e, id, m = {}) => {
+    goalsRepo.updateMilestone(id, { title: m.title, status: m.status, doneOn: m.doneOn });
+    dataChanged();
+    return true;
+  });
+  handle('milestones:delete', (_e, id) => { goalsRepo.deleteMilestone(id); dataChanged(); return true; });
 
   // ---- task steps (each call returns the task's full, ordered step list)
   handle('steps:create', (_e, taskId, title) => stepsRepo.create(taskId, title));

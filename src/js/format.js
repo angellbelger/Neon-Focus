@@ -97,3 +97,27 @@ export function parseIsoDate(value) {
   if (!y || !m || !d) return null;
   return new Date(y, m - 1, d).getTime();
 }
+
+/** Hours and minutes, e.g. "2 h 30 min", "45 min", "0 min". */
+export function hoursMinutes(seconds) {
+  const total = Math.round((seconds || 0) / 60);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (!h) return `${m} min`;
+  return m ? `${h} h ${String(m).padStart(2, '0')} min` : `${h} h`;
+}
+
+/** Local 'YYYY-MM-DD' -> ms at local midnight. */
+export function dateKeyToMs(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d).getTime();
+}
+
+/** Day of the year (1-based) and days left, like a paper planner ("290 / 75"). */
+export function dayOfYear(ms) {
+  const d = new Date(ms);
+  const start = new Date(d.getFullYear(), 0, 1);
+  const n = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - start) / 86400000) + 1;
+  const days = new Date(d.getFullYear(), 1, 29).getDate() === 29 ? 366 : 365;
+  return { n, left: days - n };
+}

@@ -22,6 +22,8 @@ const SETTINGS_SCHEMA = {
   glowIntensity:        { type: 'int',  min: 0, max: 100, default: 60 },
   reduceMotion:         { type: 'bool', default: false },
   trayTimer:            { type: 'bool', default: true },
+  // Tag whose time the Agenda shows as H.E. (Hours English). null = the tag named "English".
+  hoursTagId:           { type: 'optInt', min: 1, max: 1e9, default: null },
 };
 
 function defaultSettings() {
@@ -50,6 +52,14 @@ function validateSetting(key, value) {
       }
       if (n < spec.min || n > spec.max) {
         throw new SettingsValidationError(key, `${key} must be between ${spec.min} and ${spec.max}.`);
+      }
+      return n;
+    }
+    case 'optInt': {
+      if (value === null || value === '') return null;
+      const n = Number(value);
+      if (!Number.isInteger(n) || n < spec.min || n > spec.max) {
+        throw new SettingsValidationError(key, `${key} must be empty or a valid id.`);
       }
       return n;
     }

@@ -143,3 +143,17 @@
   .task__history li { grid-template-columns: 1fr auto; }
   .task__history li .status { display: none; }
 }
+
+/* tags, dates and goals on task rows */
+.page--tasks .page__head h1 { margin-right: 0; }
+.page--tasks .page__head #tags-manage { margin-right: auto; }
+.quick-add__date { display: flex; align-items: center; gap: 8px; color: var(--text-3); font-size: var(--fs-sm); }
+.quick-add__date input { width: 150px; }
+.task__date {
+  border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent;
+  padding: 1px 10px; color: var(--text-2); font-size: var(--fs-xs);
+}
+.task__date:hover { border-color: var(--line-strong); color: var(--text); }
+.task__date[data-has-date='false'] { border-style: dashed; color: var(--text-3); }
+.task__goal { color: var(--neon-green); font-size: var(--fs-xs); opacity: 0.85; }
+.task__title .tag-chips { margin-left: 10px; }

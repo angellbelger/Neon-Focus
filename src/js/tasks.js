@@ -5,6 +5,23 @@ import { api, store } from './store.js';
 import { $, h, icon, ICONS, radioGroup, toast, toastError, confirmAction } from './ui.js';
 import { duration, dateShort, time, MODE_LABEL, STATUS_LABEL, plural } from './format.js';
 import { registerPage, currentPage, navigate } from './navigation.js';
+import { tagChips, openTagPicker, openTagManager } from './tags.js';
+import { isoDate, dateKeyToMs } from './format.js';
+
+let goalOptions = [];
+
+const TAG_ICON = ['M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3-8.7 8.7z', 'M8 6.6a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8z'];
+
+function dayLabel(key) {
+  const ms = dateKeyToMs(key);
+  const today = isoDate(Date.now());
+  const tomorrow = isoDate(Date.now() + 86400000);
+  const yesterday = isoDate(Date.now() - 86400000);
+  if (key === today) return 'Today';
+  if (key === tomorrow) return 'Tomorrow';
+  if (key === yesterday) return 'Yesterday';
+  return new Date(ms).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: new Date(ms).getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+}
 
 const state = {
   filter: 'active',
@@ -212,13 +229,19 @@ function taskRow(t) {
       onclick: () => toggleDone(t),
     }, icon(ICONS.check)),
     h('div.task__main', {},
-      h('p.task__title', {}, t.title),
+      h('p.task__title', {}, t.title, tagChips(t.tags)),
       t.description ? h('p.task__desc', {}, t.description) : null,
       h('div.task__meta', {},
         pips(done, est),
         h('span.pomo-count', {}, progressText),
         h('span', {}, `${duration(t.focus_seconds)} focused${estTime}`),
         stepsMeta(t),
+        h('button.task__date', {
+          type: 'button', title: 'Change the day in the Agenda', 'data-has-date': String(Boolean(t.scheduled_date)),
+          onclick: () => openEditor(t, 'date'),
+        }, t.scheduled_date ? dayLabel(t.scheduled_date) : 'No date'),
+        t.goal_id && goalOptions.find((g) => g.id === t.goal_id)
+          ? h('span.task__goal', { title: 'Contributes to this goal' }, `◆ ${goalOptions.find((g) => g.id === t.goal_id).title}`) : null,
         selected ? h('span.task__selected', {}, 'Selected on the timer') : null),
       stepsBlock(t)),
     h('div.task__actions', {},
@@ -226,6 +249,10 @@ function taskRow(t) {
         type: 'button', title: 'Focus on this task', 'aria-label': `Focus on "${t.title}"`,
         onclick: () => focusOn(t),
       }, icon(ICONS.play)) : null,
+      h('button.icon-btn', {
+        type: 'button', title: 'Tags', 'aria-label': `Tags of "${t.title}"`,
+        onclick: () => openTagPicker(t),
+      }, icon(TAG_ICON)),
       h('button.icon-btn', {
         type: 'button', title: 'Session history', 'aria-label': `Session history for "${t.title}"`,
         'aria-expanded': String(state.open.has(t.id)), 'aria-controls': `task-hist-${t.id}`,
@@ -263,7 +290,9 @@ function render() {
 
 async function load() {
   try {
-    state.tasks = await api.tasks.list(state.filter);
+    const [tasks, goals] = await Promise.all([api.tasks.list(state.filter), api.goals.options().catch(() => [])]);
+    goalOptions = goals;
+    state.tasks = tasks;
     render();
   } catch (err) { toastError(err); }
 }
@@ -309,15 +338,21 @@ async function removeTask(t) {
   } catch (err) { toastError(err); }
 }
 
-function openEditor(t) {
+export async function openEditor(t, focusField = 'title') {
   const dlg = $('#task-editor');
   const form = $('#task-editor-form');
+  try { goalOptions = await api.goals.options(); } catch (_) { /* keep previous */ }
+  const goalSel = form.elements.goal;
+  goalSel.replaceChildren(h('option', { value: '' }, 'No goal'),
+    ...goalOptions.map((g) => h('option', { value: String(g.id) }, `${g.title} (${g.year})${g.completed_at ? ', completed' : ''}`)));
   form.elements.title.value = t.title;
   form.elements.description.value = t.description || '';
   form.elements.estimate.value = t.estimated_pomodoros || '';
+  form.elements.date.value = t.scheduled_date || '';
+  goalSel.value = t.goal_id ? String(t.goal_id) : '';
   $('#task-editor-error').hidden = true;
   dlg.showModal();
-  form.elements.title.focus();
+  (form.elements[focusField] || form.elements.title).focus();
   form.onsubmit = async (e) => {
     if (e.submitter && e.submitter.value === 'cancel') return;
     e.preventDefault();
@@ -326,6 +361,8 @@ function openEditor(t) {
         title: form.elements.title.value,
         description: form.elements.description.value,
         estimatedPomodoros: form.elements.estimate.value === '' ? null : Number(form.elements.estimate.value),
+        scheduledDate: form.elements.date.value || null,
+        goalId: goalSel.value ? Number(goalSel.value) : null,
       });
       dlg.close();
       toast('Task saved.');
@@ -351,14 +388,28 @@ export function initTasks() {
     const title = form.elements.title.value.trim();
     if (!title) { form.elements.title.focus(); return; }
     try {
-      await api.tasks.create({ title, estimatedPomodoros: form.elements.estimate.value === '' ? null : Number(form.elements.estimate.value) });
+      await api.tasks.create({
+        title,
+        estimatedPomodoros: form.elements.estimate.value === '' ? null : Number(form.elements.estimate.value),
+        scheduledDate: form.elements.date.value || null,
+      });
       form.reset();
+      form.elements.date.value = isoDate(Date.now());
       form.elements.title.focus();
       if (state.filter === 'completed') { state.filter = 'active'; filter.set('active'); load(); }
     } catch (err) { toastError(err); }
   });
 
-  registerPage('tasks', { onShow: load });
+  $('#tags-manage').addEventListener('click', () => openTagManager());
+  $('#tag-manager').addEventListener('close', () => { if (currentPage() === 'tasks') load(); });
+  $('#quick-date').value = isoDate(Date.now());
+
+  registerPage('tasks', { onShow: () => {
+    const q = $('#quick-date');
+    if (!q.value || q.dataset.auto !== 'false') q.value = isoDate(Date.now());
+    load();
+  } });
+  $('#quick-date').addEventListener('change', (e) => { e.target.dataset.auto = 'false'; });
   api.data.onChanged(() => { if (currentPage() === 'tasks') load(); });
   store.on('timer', () => { if (currentPage() === 'tasks') render(); });
 }

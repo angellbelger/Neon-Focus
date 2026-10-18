@@ -6,6 +6,8 @@ import { initNavigation, navigate } from './navigation.js';
 import { initTimer } from './timer.js';
 import { initDashboard } from './dashboard.js';
 import { initTasks } from './tasks.js';
+import { initAgenda } from './agenda.js';
+import { initGoals } from './goals.js';
 import { initHistory } from './history.js';
 import { initSettings, applyAppearance } from './settings.js';
 import { playAlarm, unlockAudio } from './audio.js';
@@ -21,6 +23,8 @@ async function boot() {
   initTimer();
   initDashboard();
   initTasks();
+  initAgenda();
+  initGoals();
   initHistory();
   initSettings();
   initNavigation();

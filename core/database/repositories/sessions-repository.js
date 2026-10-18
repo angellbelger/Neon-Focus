@@ -15,7 +15,7 @@ class SessionsRepository {
   record(s) {
     if (!SESSION_TYPES.includes(s.sessionType)) throw new Error(`Invalid session type ${s.sessionType}`);
     if (!STATUSES.includes(s.status)) throw new Error(`Invalid status ${s.status}`);
-    const { changes } = this.db.run(
+    const { changes, lastInsertRowid } = this.db.run(
       `INSERT OR IGNORE INTO sessions
         (run_id, task_id, task_title, session_type, planned_duration_seconds, actual_duration_seconds,
          started_at, ended_at, status, completed)
@@ -33,6 +33,15 @@ class SessionsRepository {
         s.status === 'completed' ? 1 : 0,
       ],
     );
+    // Snapshot the task's tags so this session keeps its activity
+    // classification even if the task's tags change later.
+    if (changes > 0 && s.taskId) {
+      this.db.run(
+        `INSERT OR IGNORE INTO session_tags (session_id, tag_id, tag_name)
+         SELECT ?, t.id, t.name FROM task_tags tt JOIN tags t ON t.id = tt.tag_id WHERE tt.task_id = ?`,
+        [lastInsertRowid, s.taskId],
+      );
+    }
     return changes > 0;
   }
 

@@ -1,0 +1,188 @@
+/* ================================================================ Agenda
+   A week per page, like the paper planner: ruled day rows, a big date,
+   tasks with checks, a note in red "ink", and a tally box on the far
+   right of every day (TTP / H.E.). The side column holds the yearly
+   planners, the week and year tallies, and a month calendar. */
+
+.page--agenda { max-width: 1280px; }
+
+.agenda {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 28px;
+  align-items: start;
+}
+
+.agenda__days {
+  list-style: none; margin: 0; padding: 0;
+  border-top: 1px solid var(--line-strong);
+}
+
+/* ---------------------------------------------------------------- one day */
+.ag-day {
+  position: relative;
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr) 158px;
+  gap: 18px;
+  padding: 16px 0 16px 14px;
+  border-bottom: 1px solid var(--line);
+  /* faint ruled lines, like planner paper */
+  background-image: repeating-linear-gradient(180deg, transparent 0 31px, rgba(150, 200, 255, 0.035) 31px 32px);
+  background-position: 0 12px;
+}
+.ag-day::before {
+  content: ''; position: absolute; left: 0; top: 14px; bottom: 14px; width: 2px; border-radius: 2px;
+  background: var(--line);
+}
+.ag-day[data-today='true']::before { background: var(--focus); box-shadow: 0 0 calc(10px * var(--glow)) var(--focus); }
+.ag-day[data-weekend='true'] .ag-day__wd { color: var(--ink); }
+
+.ag-day__date { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ag-day__num {
+  font-family: var(--font-mono); font-weight: 200;
+  font-size: 2.6rem; line-height: 1; letter-spacing: -0.04em;
+  color: var(--text);
+}
+.ag-day[data-today='true'] .ag-day__num { color: var(--focus); text-shadow: 0 0 calc(16px * var(--glow)) color-mix(in srgb, var(--focus) 50%, transparent); }
+.ag-day__wd { font-weight: 500; margin-top: 4px; }
+.ag-day__month { color: var(--text-3); font-size: var(--fs-xs); }
+.ag-day__doy { color: var(--text-3); font-family: var(--font-mono); font-size: 0.625rem; margin-top: 2px; }
+.ag-day__today {
+  align-self: flex-start; margin-top: 6px;
+  font-size: 0.625rem; padding: 0 8px; border-radius: var(--r-pill);
+  color: var(--focus); border: 1px solid color-mix(in srgb, var(--focus) 45%, transparent);
+}
+
+.ag-day__body { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+
+/* tasks */
+.ag-tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.ag-task {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px;
+  min-height: 32px; padding: 2px 0;
+}
+.ag-task__check {
+  width: 20px; height: 20px; flex: none; border-radius: 50%;
+  border: 1.5px solid var(--line-strong); background: transparent;
+  display: grid; place-items: center; color: transparent;
+  transition: border-color var(--t-fast), background var(--t-fast), color var(--t-fast);
+}
+.ag-task__check svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.ag-task__check:hover { border-color: var(--focus); color: color-mix(in srgb, var(--focus) 60%, transparent); }
+.ag-task[data-status='completed'] .ag-task__check { background: var(--focus); border-color: var(--focus); color: var(--void); }
+.ag-task__title {
+  border: 0; background: transparent; padding: 2px 0; text-align: left;
+  color: var(--text); font-size: var(--fs-md); overflow-wrap: anywhere; max-width: 100%;
+}
+.ag-task__title:hover { text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 4px; }
+.ag-task[data-status='completed'] .ag-task__title { color: var(--text-3); text-decoration: line-through; }
+.ag-task .tag-chips { margin-left: 0; }
+.ag-task__meta { display: inline-flex; gap: 10px; color: var(--text-3); font-size: var(--fs-xs); font-family: var(--font-mono); }
+
+/* note, in "ink" */
+.ag-note__text {
+  display: block; width: 100%;
+  border: 0; background: transparent; padding: 4px 0 4px 12px; text-align: left;
+  border-left: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
+  color: var(--ink); font-style: italic; font-size: var(--fs-md); line-height: 1.55;
+  white-space: pre-wrap; overflow-wrap: anywhere; cursor: text;
+}
+.ag-note__text:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.ag-note--editing { display: flex; flex-direction: column; gap: 8px; }
+.ag-note__input { width: 100%; min-height: 76px; color: var(--ink); font-style: italic; border-color: color-mix(in srgb, var(--ink) 40%, transparent); }
+.ag-note__input:focus-visible { border-color: var(--ink); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 20%, transparent); }
+.ag-note__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ag-note__actions .btn--accent { background: var(--ink); border-color: var(--ink); box-shadow: none; }
+.ag-note__del { color: var(--danger); }
+.ag-note__hint { color: var(--text-3); font-size: var(--fs-xs); margin-left: auto; }
+
+/* add task / note */
+.ag-day__tools { display: flex; gap: 6px; opacity: 0.55; transition: opacity var(--t-fast); }
+.ag-day:hover .ag-day__tools, .ag-day:focus-within .ag-day__tools, .ag-day[data-today='true'] .ag-day__tools { opacity: 1; }
+@media (hover: none) { .ag-day__tools { opacity: 1; } }
+.ag-tool {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 10px 2px 6px; border: 0; border-radius: var(--r-pill);
+  background: transparent; color: var(--text-3); font-size: var(--fs-sm);
+}
+.ag-tool span { color: var(--focus); font-size: 1.05rem; line-height: 1; width: 14px; text-align: center; }
+.ag-tool--note span { color: var(--ink); }
+.ag-tool:hover { color: var(--text); background: rgba(255, 255, 255, 0.03); }
+.ag-add { display: grid; grid-template-columns: 20px 1fr; align-items: center; gap: 10px; }
+.ag-add__plus { color: var(--focus); text-align: center; }
+.ag-add__input { height: 34px; }
+
+/* the tally box on the far right */
+.ag-day__stats {
+  align-self: start;
+  margin: 0;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  background: rgba(5, 6, 11, 0.45);
+  font-family: var(--font-mono);
+}
+.ag-day__stats div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.ag-day__stats dt { color: var(--text-3); font-size: 0.6875rem; }
+.ag-day__stats dd { margin: 0; color: var(--text); font-size: 0.8125rem; white-space: nowrap; }
+.ag-day__stats div:first-child dd { color: var(--focus); }
+
+/* ---------------------------------------------------------------- side column */
+.agenda__side { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 22px; }
+.planners__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+
+.weekbox { padding: 14px 16px; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--panel); }
+.weekbox .side-title { margin-bottom: 6px; }
+.tally { margin: 0; display: flex; flex-direction: column; gap: 4px; font-family: var(--font-mono); }
+.tally div { display: flex; align-items: baseline; gap: 10px; }
+.tally dt { color: var(--text-3); font-size: var(--fs-sm); min-width: 3.4em; }
+.tally dt::after { content: ' ='; }
+.tally dd { margin: 0; font-size: 1.15rem; color: var(--text); }
+.tally div:first-child dd { color: var(--focus); }
+.weekbox__meta { margin-top: 8px; color: var(--text-3); font-size: var(--fs-xs); }
+.weekbox--year .tally dd { font-size: 1rem; }
+
+.minical__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.minical__head p { font-size: var(--fs-sm); color: var(--text-2); }
+.minical__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+.minical__dow { color: var(--text-3); font-size: 0.625rem; padding: 2px 0; }
+.minical__day {
+  border: 0; background: transparent; border-radius: 6px;
+  padding: 4px 0; font-size: 0.75rem; color: var(--text-2); font-variant-numeric: tabular-nums;
+}
+.minical__day:hover { background: var(--panel-strong); color: var(--text); }
+.minical__day[data-in-week='true'] { background: color-mix(in srgb, var(--focus) 12%, transparent); color: var(--text); }
+.minical__day[data-today='true'] { color: var(--focus); font-weight: 600; box-shadow: inset 0 0 0 1px var(--focus); }
+
+.side-setting { display: flex; flex-direction: column; gap: 6px; color: var(--text-3); font-size: var(--fs-xs); }
+.side-setting select { height: 34px; font-size: var(--fs-sm); color: var(--text); }
+
+/* ---------------------------------------------------------------- narrower screens */
+@media (max-width: 1100px) {
+  .agenda { grid-template-columns: 1fr; }
+  .agenda__side { position: static; order: -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+  .planners__list { flex-direction: row; flex-wrap: wrap; }
+  .planners__list .planner { width: auto; }
+}
+
+@media (max-width: 760px) {
+  /* Small screens: planners and this week's tally first, then the days,
+     then the year tally, calendar and H.E. setting. */
+  .agenda { display: flex; flex-direction: column; gap: 16px; }
+  .agenda__side { display: contents; }
+  .planners { order: 1; }
+  .agenda__side > .weekbox:not(.weekbox--year) { order: 2; }
+  .agenda__days { order: 3; }
+  .weekbox--year { order: 4; }
+  .minical { order: 5; }
+  .side-setting { order: 6; }
+  .planners__list .planner { padding: 5px 12px; }
+  .planners__list .planner__label { display: none; }
+  .tally { flex-direction: row; flex-wrap: wrap; gap: 4px 20px; }
+  .ag-day { grid-template-columns: 1fr auto; gap: 10px 14px; padding-left: 12px; }
+  .ag-day__date { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+  .ag-day__num { font-size: 2rem; }
+  .ag-day__wd { margin-top: 0; }
+  .ag-day__body { grid-column: 1 / -1; grid-row: 2; }
+  .ag-day__stats { grid-column: 2; grid-row: 1; padding: 6px 10px; }
+}

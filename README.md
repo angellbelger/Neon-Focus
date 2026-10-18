@@ -7,6 +7,10 @@ A desktop Pomodoro timer and productivity tracker. It has a neon interface, a SQ
 - **Focus timer**: 25/5/15 defaults with the standard 4-session cycle. You can start, pause, resume, reset and skip. The dial is a ring of 60 light tubes that switch off as time runs down. Dots under the clock show your place in the cycle.
 - **Alarms**: a sound plays at the end of every focus session and every break. There are four sounds, with a volume setting and an on/off switch. You also get a system notification.
 - **Tasks**: create, edit, delete and complete tasks. You can estimate a task in Pomodoros and see "2 of 4" progress, time spent and session history. Finishing a Pomodoro never completes a task by itself.
+- **Agenda**: your paper planner, digitally. Seven days per page, newest first: today at the top, then the six days before it (the arrows move seven days older or newer; picking a past year opens on 31 December). Each day has its tasks (the same tasks as in Tasks, placed on their date), a personal note in red "ink", and a tally box on the far right: **TTP** (Total Pomodoro, completed that day) and **H.E.** (Hours English, time of completed Pomodoros on tasks tagged *English*). The side column holds the yearly planners (only years with data, plus the current year), the week and year tallies, a month calendar, and which tag H.E. counts.
+- **Tags**: reusable categories such as English, Programming or Research. Create them under **Tasks → Manage tags** and assign them with the tag button on a task. Each Pomodoro remembers the tags its task had when it was recorded, so changing a task's tags later never rewrites history (the tag picker offers an explicit "re-classify past Pomodoros" option for corrections). Tags are never inferred from task titles.
+- **Goals**: yearly goals laid out like the "Metas e objetivos" page: Start, Completion, Action plan, Milestones (◆ done, ◇ pending, struck through when dropped) and a neon-green progress bar. Progress comes from milestones, linked tasks, activity time on a tag (e.g. 200 hours of English in 2026) or a manual value.
+- **Activity Statistics** (Dashboard → Activity Statistics): sessions and time per tag for today, this week, this month, this year, any year, a custom range or all time, with a per-task and per-month breakdown.
 - **Steps**: break a task into steps, Microsoft To Do style. Click **+ Add steps** under a task, type, and press Enter to add the next one (Esc closes the field). Tick a step to complete it, click its name to rename it, and use × to delete it. "5 of 6 steps" with a small bar shows progress and collapses or expands the list. Steps are saved with their task and deleted with it.
 - **Dashboard**: day, week, month and year views, with arrows to move through past periods. It shows key figures, three interactive line charts (focus time, completed Pomodoros, and a comparison with the previous period) and clear empty states.
 - **History**: every completed, interrupted and skipped session with exact start and end times. You can filter by date, type and status.
@@ -57,12 +61,12 @@ Neither of these touches your real data. They use their own folders in your syst
 | `Space` | Start / pause / resume |
 | `R` | Reset the current session |
 | `S` | Skip to the next session |
-| `Ctrl`/`⌘` + `1`–`5` | Focus, Dashboard, Tasks, History, Settings |
+| `Ctrl`/`⌘` + `1`–`7` | Focus, Agenda, Tasks, Goals, Dashboard, History, Settings |
 
 ## Tests
 
 ```bash
-npm test             # 39 unit tests: timer rules, duplicates, sleep, restart, statistics, DST, SQL injection, steps, import, migration
+npm test             # 53 unit tests: timer rules, duplicates, sleep, restart, statistics, DST, SQL injection, steps, import, migrations, tags, TTP/H.E., goals
 npm run test:e2e     # drives the real app: sessions, alarms, tasks, history, dashboard, restart, crash recovery
 ```
 
@@ -113,6 +117,12 @@ The app used to be called Neon Pomodoro and kept its data in a `Neon Pomodoro` f
 | --- | --- |
 | `tasks` | `id, title, description, estimated_pomodoros, status (active/completed), created_at, updated_at, completed_at` |
 | `sessions` | `id, run_id (UNIQUE), task_id → tasks ON DELETE SET NULL, task_title (snapshot), session_type (focus/short_break/long_break), planned_duration_seconds, actual_duration_seconds, started_at, ended_at, status (completed/interrupted/abandoned), completed` |
+| `tags` | `id, name (unique, case-insensitive), color` (schema v3) |
+| `task_tags` | task ↔ tag links (deleted with the task or tag) |
+| `session_tags` | `session_id → sessions, tag_id → tags ON DELETE SET NULL, tag_name` — the tags a session counted towards, copied from its task when it was recorded |
+| `daily_notes` | `note_date (YYYY-MM-DD, primary key), body` |
+| `goals` | `year, title, action_plan, start_month, target_date, progress_mode (milestones/tasks/activity/manual), manual_progress, tag_id, target_minutes, completed_at` |
+| `goal_milestones` | `goal_id → goals ON DELETE CASCADE, title, status (pending/done/dropped), done_on, position` |
 | `task_steps` | `id, task_id → tasks ON DELETE CASCADE, title, completed, position, created_at, updated_at, completed_at` (schema version 2) |
 | `settings` | `id, setting_key (UNIQUE), setting_value (JSON), updated_at` |
 | `active_session` | the one in-flight session (at most one row), so it survives restarts |
@@ -121,6 +131,10 @@ The app used to be called Neon Pomodoro and kept its data in a `Neon Pomodoro` f
 Timestamps are ISO-8601 UTC. They are converted to local time for display and for day, week, month and year boundaries. Indexes cover the date-based queries. CHECK constraints enforce valid types and statuses, and require that a completed session's duration equals its planned duration. Every query is parameterised.
 
 ## How counting works
+
+- **Task dates**: every task has an optional day in the Agenda (`tasks.scheduled_date`, a local date). New tasks default to today. Tasks created before this version were given the day they were created.
+- **TTP** for a day = completed focus sessions that ended that day (local time). **H.E.** = the recorded durations of those sessions that carry the H.E. tag (by default the tag named "English"; you can choose another in the Agenda). Shown as hours and minutes.
+- **Activity time** for a tag = the recorded durations of completed focus sessions classified under that tag, attributed to the day they ended. The Agenda, Activity Statistics and activity goals all use this same calculation, so their numbers always agree. Interrupted and skipped sessions never count.
 
 - **Pomodoro**: a completed focus session. It is counted once, on the day it ended.
 - **Breaks** are recorded and play the alarm, but never count as Pomodoros or focus time.

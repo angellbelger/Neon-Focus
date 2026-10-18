@@ -16,12 +16,30 @@ const fs = require('fs');
 const path = require('path');
 const initSqlJs = require('sql.js');
 
-const SCHEMA_VERSION = 2;
+const { localDate } = require('../dates');
 
-/** Ordered schema migrations. Each runs once, inside a transaction. */
+const SCHEMA_VERSION = 3;
+
+/**
+ * Ordered schema migrations. Each runs once, inside a transaction.
+ * `after` runs in the same transaction for data back-fills that need JS
+ * (e.g. converting UTC timestamps to local dates).
+ */
 const MIGRATIONS = [
   { version: 1, file: 'schema.sql' },
   { version: 2, file: path.join('migrations', '002-task-steps.sql') },
+  {
+    version: 3,
+    file: path.join('migrations', '003-agenda-tags-goals.sql'),
+    after(db) {
+      // Existing tasks appear in the Agenda on the day they were created.
+      const rows = db.all('SELECT id, created_at FROM tasks WHERE scheduled_date IS NULL');
+      for (const r of rows) {
+        const ms = Date.parse(r.created_at);
+        if (Number.isFinite(ms)) db.db.run('UPDATE tasks SET scheduled_date = ? WHERE id = ?', [localDate(ms), r.id]);
+      }
+    },
+  },
 ];
 
 /** Error with a message meant for the user (bad or incompatible import file). */
@@ -111,6 +129,7 @@ class Database {
       const sql = fs.readFileSync(path.join(__dirname, m.file), 'utf8');
       this.transaction(() => {
         this.db.exec(sql);
+        if (m.after) m.after(this);
         this.db.run('INSERT INTO schema_version (version) VALUES (?)', [m.version]);
       });
     }
@@ -187,6 +206,9 @@ class Database {
         schemaVersion: version,
         tasks: one('SELECT COUNT(*) FROM tasks'),
         steps: one('SELECT COUNT(*) FROM task_steps'),
+        tags: one('SELECT COUNT(*) FROM tags'),
+        notes: one('SELECT COUNT(*) FROM daily_notes'),
+        goals: one('SELECT COUNT(*) FROM goals'),
         sessions: one('SELECT COUNT(*) FROM sessions'),
         pomodoros: one("SELECT COUNT(*) FROM sessions WHERE session_type = 'focus' AND completed = 1"),
         firstSessionAt: one('SELECT MIN(started_at) FROM sessions'),
