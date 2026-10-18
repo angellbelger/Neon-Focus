@@ -58,6 +58,7 @@ contextBridge.exposeInMainWorld('pomodoro', {
   agenda: {
     days: (startDate, count) => call('agenda:days', startDate, count),
     years: () => call('agenda:years'),
+    yearNotes: () => call('agenda:yearNotes'),
     saveNote: (date, body) => call('notes:save', date, body),
     deleteNote: (date) => call('notes:delete', date),
   },

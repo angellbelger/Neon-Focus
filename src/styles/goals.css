@@ -15,8 +15,11 @@
 .goal:first-child { border-top: 1px solid var(--line-strong); }
 
 .goal__head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; padding-bottom: 8px; border-bottom: 1px solid color-mix(in srgb, var(--ink) 30%, transparent); }
-.goal__title { font-size: var(--fs-xl); font-weight: 400; letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px; }
-.goal__diamond { color: var(--ink); font-size: 0.8em; }
+.goal__title {
+  font-size: var(--fs-xl); font-weight: 400; letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px;
+  color: #ffffff;
+}
+.goal__diamond { color: var(--ruby); font-size: 0.8em; text-shadow: 0 0 calc(10px * var(--glow)) rgba(255, 42, 95, 0.6); }
 .goal__badge {
   font-size: var(--fs-xs); padding: 1px 10px; border-radius: var(--r-pill);
   color: var(--neon-green); border: 1px solid color-mix(in srgb, var(--neon-green) 45%, transparent);
@@ -46,18 +49,20 @@
 .ms { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; min-height: 32px; }
 .ms__mark {
   border: 0; background: transparent; padding: 0; width: 22px;
-  color: var(--ink); font-size: 1rem; line-height: 1; cursor: pointer;
+  color: var(--ruby); font-size: 1rem; line-height: 1; cursor: pointer;
+  /* a polished-gem glint on achieved milestones */
+  text-shadow: 0 0 calc(10px * var(--glow)) rgba(255, 42, 95, 0.55), 0 0 1px rgba(255, 200, 215, 0.6);
 }
-.ms[data-status='pending'] .ms__mark { color: var(--text-2); }
+.ms[data-status='pending'] .ms__mark { color: var(--ruby); opacity: 0.85; text-shadow: 0 0 calc(6px * var(--glow)) rgba(255, 42, 95, 0.35); }
 .ms__mark:hover { transform: scale(1.15); }
 .ms__title {
   border: 0; background: transparent; padding: 2px 4px; margin-left: -4px; border-radius: 4px;
-  color: var(--text); text-align: left; font-size: var(--fs-sm); overflow-wrap: anywhere; cursor: text;
+  color: #ffffff; text-align: left; font-size: var(--fs-sm); overflow-wrap: anywhere; cursor: text;
 }
 .ms__title:hover { background: rgba(255, 255, 255, 0.04); }
 .ms[data-status='dropped'] .ms__title { color: var(--text-3); text-decoration: line-through; }
-.ms[data-status='dropped'] .ms__mark { color: var(--text-3); }
-.ms__date { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
+.ms[data-status='dropped'] .ms__mark { color: var(--text-3); opacity: 1; text-shadow: none; }
+.ms__date { font-family: var(--font-mono); font-size: var(--fs-xs); color: #ffffff; opacity: 0.7; }
 .ms__actions { display: inline-flex; gap: 2px; opacity: 0; transition: opacity var(--t-fast); }
 .ms:hover .ms__actions, .ms:focus-within .ms__actions { opacity: 1; }
 @media (hover: none) { .ms__actions { opacity: 1; } }

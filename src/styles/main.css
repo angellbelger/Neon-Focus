@@ -91,9 +91,10 @@ main > .page { flex: 1 0 auto; width: 100%; }
   padding: 10px 16px 14px;
   text-align: center;
   font-size: 0.6875rem;
-  letter-spacing: 0.04em;
-  color: var(--text-3);
-  opacity: 0.8;
+  letter-spacing: 0.06em;
+  color: var(--cyan);
+  opacity: 0.75;
+  text-shadow: 0 0 calc(8px * var(--glow)) rgba(62, 242, 255, 0.35);
   user-select: none;
 }
 

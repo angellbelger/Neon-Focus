@@ -18,6 +18,22 @@
   border-top: 1px solid var(--line-strong);
 }
 
+/* ---------------------------------------------------------------- heading
+   "Cambridge 2026": centred over the day list, the planner year in the
+   timer's thin mono face. */
+.agenda__main { min-width: 0; }
+.agenda__head {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  margin: 4px 0 22px;
+  text-align: center;
+}
+.agenda__title { font-size: var(--fs-2xl); font-weight: 400; letter-spacing: 0.01em; }
+.agenda__year {
+  font-family: var(--font-mono); font-weight: 200; letter-spacing: -0.02em;
+  color: var(--focus);
+  text-shadow: 0 0 calc(14px * var(--glow)) color-mix(in srgb, var(--focus) 45%, transparent);
+}
+
 /* ---------------------------------------------------------------- one day */
 .ag-day {
   position: relative;
@@ -129,6 +145,40 @@
 
 /* ---------------------------------------------------------------- side column */
 .agenda__side { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 22px; }
+/* Planner cards: equal height when collapsed (three lines reserved for the
+   1 January note, in emerald); click to read the whole note. */
+.planner--card { position: relative; cursor: pointer; padding-right: 30px; }
+.planner__open {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0;
+  width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left;
+}
+.planner__note {
+  --note-lines: 3;
+  --note-lh: 1.45;
+  display: -webkit-box; -webkit-line-clamp: var(--note-lines); -webkit-box-orient: vertical; overflow: hidden;
+  width: 100%;
+  margin-top: 6px; padding: 0; border: 0; background: transparent; text-align: left;
+  font-size: 0.75rem; line-height: var(--note-lh); font-style: italic;
+  color: var(--emerald-note);
+  text-shadow: 0 0 calc(8px * var(--glow)) rgba(52, 211, 153, 0.25);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  /* the same three-line slot on every card, note or not */
+  min-height: calc(0.75rem * var(--note-lh) * var(--note-lines));
+  height: calc(0.75rem * var(--note-lh) * var(--note-lines));
+  cursor: pointer;
+}
+.planner__note--empty { cursor: inherit; }
+.planner--card[data-expanded='true'] .planner__note { display: block; height: auto; -webkit-line-clamp: unset; overflow: visible; }
+.planner__note:hover { color: color-mix(in srgb, var(--emerald-note) 85%, white); }
+.planner__chevron {
+  position: absolute; top: 12px; right: 10px;
+  width: 8px; height: 8px;
+  border-right: 1.5px solid var(--emerald-note); border-bottom: 1.5px solid var(--emerald-note);
+  transform: rotate(45deg); opacity: 0;
+  transition: transform var(--t-fast), opacity var(--t-fast);
+}
+.planner--card[data-truncated='true'] .planner__chevron { opacity: 0.8; }
+.planner--card[data-expanded='true'] .planner__chevron { transform: translateY(4px) rotate(-135deg); }
 .planners__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 
 .weekbox { padding: 14px 16px; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--panel); }
@@ -169,15 +219,17 @@
   /* Small screens: planners and this week's tally first, then the days,
      then the year tally, calendar and H.E. setting. */
   .agenda { display: flex; flex-direction: column; gap: 16px; }
-  .agenda__side { display: contents; }
+  .agenda__side, .agenda__main { display: contents; }
+  .agenda__head { order: 0; margin-bottom: 0; }
   .planners { order: 1; }
   .agenda__side > .weekbox:not(.weekbox--year) { order: 2; }
   .agenda__days { order: 3; }
   .weekbox--year { order: 4; }
   .minical { order: 5; }
   .side-setting { order: 6; }
-  .planners__list .planner { padding: 5px 12px; }
-  .planners__list .planner__label { display: none; }
+  .planners__list { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x proximity; }
+  .planners__list li { flex: 0 0 220px; scroll-snap-align: start; }
+  .planners__list .planner { height: 100%; }
   .tally { flex-direction: row; flex-wrap: wrap; gap: 4px 20px; }
   .ag-day { grid-template-columns: 1fr auto; gap: 10px 14px; padding-left: 12px; }
   .ag-day__date { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }

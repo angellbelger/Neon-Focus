@@ -350,3 +350,14 @@ test('H.E. can follow a renamed tag through the hoursTagId setting', async () =>
   assert.equal(svc.agendaDays('2026-10-17', 1).days[0].hoursSeconds, 1500);
   assert.equal(svc.agendaDays('2026-10-17', 1).hoursTag.name, 'Inglês');
 });
+
+test('1 January notes are returned per year, only for that date', async () => {
+  const { svc } = await setup();
+  svc.notesRepo.save('2024-01-01', 'Those who, though they do not have the crown, possess the pride of a king, will sooner or later ascend to the throne.');
+  svc.notesRepo.save('2024-01-02', 'Not the opening note');
+  svc.notesRepo.save('2026-01-01', 'A new year.');
+  assert.deepEqual(svc.yearOpeningNotes(), {
+    2024: 'Those who, though they do not have the crown, possess the pride of a king, will sooner or later ascend to the throne.',
+    2026: 'A new year.',
+  });
+});

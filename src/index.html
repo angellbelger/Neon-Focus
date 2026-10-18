@@ -140,18 +140,19 @@
 
       <!-- ============================================================ AGENDA -->
       <section class="page page--agenda" data-page="agenda" aria-labelledby="agenda-heading" hidden>
-        <header class="page__head">
-          <h1 id="agenda-heading">Agenda</h1>
-          <div class="period-nav">
-            <button class="icon-btn" id="ag-prev" aria-label="Previous 7 days (older)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
-            <span class="period-nav__label" id="ag-range" aria-live="polite"></span>
-            <button class="icon-btn" id="ag-next" aria-label="Next 7 days (newer)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
-            <button class="btn btn--small btn--ghost" id="ag-today">Today</button>
-          </div>
-        </header>
-
         <div class="agenda">
-          <ol class="agenda__days" id="ag-days" aria-label="Days of the week"></ol>
+          <div class="agenda__main">
+            <header class="agenda__head">
+              <h1 id="agenda-heading" class="agenda__title">Cambridge <span class="agenda__year" id="ag-planner-name"></span></h1>
+              <div class="period-nav">
+                <button class="icon-btn" id="ag-prev" aria-label="Previous 7 days (older)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+                <span class="period-nav__label" id="ag-range" aria-live="polite"></span>
+                <button class="icon-btn" id="ag-next" aria-label="Next 7 days (newer)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+                <button class="btn btn--small btn--ghost" id="ag-today">Today</button>
+              </div>
+            </header>
+            <ol class="agenda__days" id="ag-days" aria-label="Days, newest first"></ol>
+          </div>
 
           <aside class="agenda__side" aria-label="Planner">
             <nav class="planners" aria-label="Yearly planners">

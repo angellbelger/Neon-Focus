@@ -159,7 +159,8 @@ function render() {
 async function load() {
   try {
     const [years, goals] = await Promise.all([api.goals.years(), api.goals.list(state.year)]);
-    state.years = years.includes(state.year) ? years : [...years, state.year].sort((a, b) => a - b);
+    // Most recent year first.
+    state.years = [...new Set([...years, state.year])].sort((a, b) => b - a);
     state.goals = goals;
     render();
   } catch (err) { toastError(err); }

@@ -126,6 +126,7 @@ function registerIpc(svc, { getWindow, dbPath, onSettingsChanged, startupInfo })
   // ---- agenda & notes
   handle('agenda:days', (_e, startDate, count) => svc.agendaDays(startDate, count));
   handle('agenda:years', () => svc.agendaYears());
+  handle('agenda:yearNotes', () => svc.yearOpeningNotes());
   handle('notes:save', (_e, date, body) => { const n = notesRepo.save(date, body); dataChanged(); return n; });
   handle('notes:delete', (_e, date) => { const ok = notesRepo.delete(date); dataChanged(); return ok; });
 

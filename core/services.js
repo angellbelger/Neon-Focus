@@ -251,6 +251,15 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
     return { from: first, to: last, days, week, hoursTag: tag ? { id: tag.id, name: tag.name } : null };
   }
 
+  /** The note written on 1 January of each year (one note per day), keyed by year. */
+  function yearOpeningNotes() {
+    const out = {};
+    for (const r of db.all("SELECT note_date, body FROM daily_notes WHERE substr(note_date, 6, 5) = '01-01' ORDER BY note_date")) {
+      out[Number(r.note_date.slice(0, 4))] = r.body;
+    }
+    return out;
+  }
+
   /** Years that have tasks, notes, sessions or goals, plus the current year. */
   function agendaYears() {
     const years = new Set([new Date(clock()).getFullYear()]);
@@ -376,7 +385,7 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
   return {
     db, settingsRepo, tasksRepo, sessionsRepo, stateRepo, stepsRepo, tagsRepo, notesRepo, goalsRepo, engine,
     report, today, exportCsv, clearAllData, listTasks, decorateTasks, prepareImport, applyImport,
-    activityStats, activityDetail, tagSeconds, hoursTag, agendaDays, agendaYears, listGoals, goalYears,
+    activityStats, activityDetail, tagSeconds, hoursTag, agendaDays, agendaYears, yearOpeningNotes, listGoals, goalYears,
   };
 }
 

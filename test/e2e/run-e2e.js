@@ -447,20 +447,48 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
 
   // year navigation: only years with data
   await page.evaluate(() => window.pomodoro.tasks.create({ title: 'Old planner entry', scheduledDate: '2024-05-10' }));
+  const quote = 'Those who, though they do not have the crown, possess the pride of a king, will sooner or later ascend to the throne.';
+  await page.evaluate((q) => window.pomodoro.agenda.saveNote('2024-01-01', q), quote);
   await page.click('[data-nav="tasks"]');
   await page.click('[data-nav="agenda"]');
   await waitFor(page, () => document.querySelectorAll('#ag-years .planner').length >= 2);
   const yearsShown = await page.locator('#ag-years .planner__year').allTextContents();
   const nowYear = String(new Date().getFullYear());
-  assert.deepEqual(yearsShown, ['2024', nowYear], 'no empty years such as 2025');
+  assert.deepEqual(yearsShown, [nowYear, '2024'], 'newest planner first; no empty years such as 2025');
+  assert.equal(await page.locator('#ag-years .planner', { hasText: '2024' }).locator('.planner__note').textContent(), quote, "2024 shows its 1 January note");
+  assert.equal(await page.locator('#ag-years .planner', { hasText: nowYear }).locator('button.planner__note').count(), 0, 'no note, no placeholder');
+  assert.equal((await page.locator('#ag-years .planner', { hasText: nowYear }).locator('.planner__note').textContent()), '');
+  const cardHeights = () => page.locator('#ag-years .planner--card').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().height)));
+  let heights = await cardHeights();
+  assert.equal(new Set(heights).size, 1, `collapsed planner cards share one height (${heights})`);
+  const noteColor = await page.locator('#ag-years button.planner__note').evaluate((el) => getComputedStyle(el).color);
+  assert.match(noteColor, /52, 211, 153/, 'emerald planner note');
+  assert.equal((await page.textContent('#agenda-heading')).trim(), `Cambridge ${nowYear}`);
   await page.locator('#ag-years .planner', { hasText: '2024' }).click();
   await page.waitForSelector('.ag-day[data-date="2024-12-31"]');
+  // opening the 2024 planner shows its whole note; clicking the card collapses it again
+  await waitFor(page, () => document.querySelector('#ag-years .planner[aria-current="true"]')?.dataset.expanded === 'true');
+  heights = await cardHeights();
+  const openIdx = await page.locator('#ag-years .planner--card').evaluateAll((els) => els.findIndex((e) => e.getAttribute('aria-current') === 'true'));
+  assert.ok(heights[openIdx] > Math.min(...heights), 'expanded note makes its card taller');
+  await page.locator('#ag-years .planner[aria-current="true"] button.planner__note').click();
+  await waitFor(page, () => document.querySelector('#ag-years .planner[aria-current="true"]').dataset.expanded === 'false');
+  heights = await cardHeights();
+  assert.equal(new Set(heights).size, 1, 'collapsed again: all cards equal');
+  await page.locator('#ag-years .planner[aria-current="true"] .planner__open').click();
+  await waitFor(page, () => document.querySelector('#ag-years .planner[aria-current="true"]').dataset.expanded === 'true');
+  assert.equal(await page.locator('#ag-years .planner[aria-current="true"] button.planner__note').textContent(), quote, 'full note, unchanged');
+  await page.locator('#ag-years .planner[aria-current="true"] button.planner__note').click();
   assert.equal(await page.locator('.ag-day').first().getAttribute('data-date'), '2024-12-31', 'a past planner opens on its last day');
   assert.equal(await page.locator('#ag-years .planner[aria-current="true"] .planner__year').textContent(), '2024');
+  assert.equal((await page.textContent('#agenda-heading')).trim(), 'Cambridge 2024', 'heading follows the selected planner');
   await page.click('#ag-today');
   await page.waitForSelector(`.ag-day[data-date="${todayKey}"]`);
   assert.equal(await page.locator('.ag-day').first().getAttribute('data-date'), todayKey);
-  step(`year planners: ${yearsShown.join(', ')} (empty years hidden); switching keeps data`);
+  assert.equal((await page.textContent('#agenda-heading')).trim(), `Cambridge ${nowYear}`);
+  const creditColor = await page.locator('.credit').evaluate((el) => getComputedStyle(el).color);
+  assert.match(creditColor, /62, 242, 255/, 'cyan footer credit');
+  step(`planners newest first (${yearsShown.join(', ')}), equal-height cards, emerald 1 January note expands/collapses, "Cambridge <year>" heading, cyan credit`);
   await shot(page, '11-agenda');
 
   // goals: create with milestones, neon progress; activity goal from the English tag
@@ -488,7 +516,12 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   await waitFor(page, () => /75%/.test([...document.querySelectorAll('.goal')].find((g) => g.textContent.includes('research project')).querySelector('.evo__pct').textContent));
   const fillColor = await goal().locator('.evo__fill').evaluate((el) => getComputedStyle(el).backgroundImage);
   assert.match(fillColor, /57, 255, 20/, 'neon-green bar');
-  step('goal created; milestones done/dropped drive the neon-green bar to 75%');
+  const msColor = await goal().locator('.ms[data-status="done"] .ms__mark').first().evaluate((el) => getComputedStyle(el).color);
+  assert.match(msColor, /255, 42, 95/, 'ruby milestone markers');
+  assert.equal(await goal().locator('.ms__title').first().evaluate((el) => getComputedStyle(el).color), 'rgb(255, 255, 255)', 'white milestone text');
+  assert.equal(await goal().locator('.goal__title').evaluate((el) => getComputedStyle(el).color), 'rgb(255, 255, 255)', 'goal name in white');
+  assert.match(await goal().locator('.goal__diamond').evaluate((el) => getComputedStyle(el).color), /255, 42, 95/, 'main milestone diamond in neon ruby');
+  step('goal created; ruby milestones done/dropped drive the neon-green bar to 75%');
 
   await page.click('#goal-new');
   await page.fill('#goal-editor-form [name="title"]', 'Study English for 200 hours');
@@ -503,7 +536,14 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   await page.click('[data-goal-filter="completed"]');
   await waitFor(page, () => document.querySelectorAll('.goal').length === 1 && document.querySelector('.goal').textContent.includes('research'));
   await page.click('[data-goal-filter="all"]');
-  step('activity goal tracks English time; goals can be marked achieved and filtered');
+  await page.evaluate(() => window.pomodoro.goals.create({ year: 2021, title: 'Old goal' }));
+  await page.evaluate(() => window.pomodoro.goals.create({ year: 2027, title: 'Future goal' }));
+  await waitFor(page, () => document.querySelectorAll('#goal-years .planner').length >= 3);
+  const goalYears = await page.locator('#goal-years .planner__year').allTextContents();
+  assert.deepEqual(goalYears, [...goalYears].sort().reverse(), 'Goals years newest first');
+  assert.equal(goalYears[0], '2027');
+  assert.equal(goalYears[goalYears.length - 1], '2021');
+  step('activity goal tracks English time; goals can be marked achieved and filtered; years newest first');
   await shot(page, '12-goals');
 
   // activity statistics: English across tasks; untagged session excluded

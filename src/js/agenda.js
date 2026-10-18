@@ -17,6 +17,8 @@ const state = {
   followToday: true,   // page is anchored on today (re-anchors after midnight)
   calMonth: null,      // ms inside the month shown in the mini calendar
   years: [],
+  yearNotes: {},       // year -> note written on 1 January
+  expandedNotes: new Set(), // years whose note is shown in full (display only)
   data: null,
   editingNote: null,   // date whose note editor is open
   addingFor: null,     // date whose "add task" field is open
@@ -159,11 +161,66 @@ function dayRow(day, hoursLabel) {
 
 function renderYears() {
   const current = pageYear();
-  $('#ag-years').replaceChildren(...state.years.map((y) => h('li', {},
-    h('button.planner', {
-      type: 'button', 'aria-current': y === current ? 'true' : null,
-      onclick: () => openYear(y),
-    }, h('span.planner__year', {}, String(y)), h('span.planner__label', {}, 'Planner')))));
+  $('#ag-planner-name').textContent = String(current);
+  // Newest planner first; each shows the note written on 1 January of its year.
+  const years = [...state.years].sort((a, b) => b - a);
+  $('#ag-years').replaceChildren(...years.map((y) => {
+    const quote = state.yearNotes[y];
+    const expanded = Boolean(quote) && state.expandedNotes.has(y);
+    const isCurrent = y === current;
+    // Every card reserves three lines for the note, so collapsed cards are
+    // all the same height. Expanding only changes the display, never the note.
+    return h('li', {},
+      h('div.planner.planner--card', {
+        'aria-current': isCurrent ? 'true' : null,
+        'data-expanded': String(expanded),
+        // Another year's card: open that planner with its note expanded.
+        // The open planner's card: click to expand or collapse its note.
+        onclick: (e) => {
+          if (isCurrent && e.target.closest('button.planner__note')) return;
+          if (!isCurrent) {
+            if (quote) state.expandedNotes.add(y);
+            openYear(y);
+          } else if (quote) {
+            toggleNote(y);
+          }
+        },
+      },
+      h('button.planner__open', {
+        type: 'button',
+        'aria-label': isCurrent ? `${y} planner (open)` : `Open the ${y} planner`,
+      }, h('span.planner__year', {}, String(y)), h('span.planner__label', {}, 'Planner')),
+      quote
+        ? h('button.planner__note', {
+          type: 'button',
+          'aria-expanded': String(expanded),
+          'aria-label': `Note from 1 January ${y}: ${quote}. ${expanded ? 'Show less' : 'Show the whole note'}`,
+          onclick: (e) => { if (isCurrent) { e.stopPropagation(); toggleNote(y); } },
+        }, quote)
+        : h('span.planner__note.planner__note--empty', { 'aria-hidden': 'true' }),
+      quote ? h('span.planner__chevron', { 'aria-hidden': 'true' }) : null));
+  }));
+  markTruncatedNotes();
+}
+
+function toggleNote(year) {
+  if (state.expandedNotes.has(year)) state.expandedNotes.delete(year);
+  else state.expandedNotes.add(year);
+  renderYears();
+}
+
+/** Marks notes that don't fit in three lines, so they show a "more" chevron. */
+function markTruncatedNotes() {
+  requestAnimationFrame(() => {
+    for (const card of document.querySelectorAll('#ag-years .planner--card')) {
+      const note = card.querySelector('button.planner__note');
+      if (!note) continue;
+      const expanded = card.dataset.expanded === 'true';
+      const overflow = note.scrollHeight > note.clientHeight + 1;
+      card.dataset.truncated = String(expanded || overflow);
+      if (!expanded && !overflow) note.removeAttribute('aria-expanded');
+    }
+  });
 }
 
 function renderCalendar() {
@@ -252,10 +309,13 @@ function render(focusKey = null) {
 async function load() {
   const ticket = ++state.loading;
   try {
-    const [data, years] = await Promise.all([api.agenda.days(state.weekStart, 7), api.agenda.years()]);
+    const [data, years, yearNotes] = await Promise.all([
+      api.agenda.days(state.weekStart, 7), api.agenda.years(), api.agenda.yearNotes(),
+    ]);
     if (ticket !== state.loading) return;
     state.data = data;
     state.years = years;
+    state.yearNotes = yearNotes || {};
     render();
     renderSide();
   } catch (err) { toastError(err); }
