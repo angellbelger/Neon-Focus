@@ -75,6 +75,40 @@ test('agenda shows tasks on their dates, with tags, steps and completion from th
   assert.equal(week.days[5].tasks[0].status, 'completed');
 });
 
+test('week stats cover the whole Monday–Sunday week, including days still to come', async () => {
+  // Wednesday 14 October 2026; the week runs Mon 12 – Sun 18
+  const { svc, clock } = await setup(new Date(2026, 9, 12, 9, 0));
+  const english = svc.tagsRepo.create({ name: 'English' });
+  const t = svc.tasksRepo.create({ title: 'English', scheduledDate: '2026-10-12' });
+  svc.tagsRepo.setTaskTags(t.id, [english.id]);
+  clock.set(new Date(2026, 9, 11, 20, 0).getTime()); pomodoro(svc, clock, t.id); // Sunday before: other week
+  clock.set(new Date(2026, 9, 12, 9, 0).getTime()); pomodoro(svc, clock, t.id); // Monday
+  clock.set(new Date(2026, 9, 14, 9, 0).getTime()); pomodoro(svc, clock, null); // Wednesday (today), untagged
+  let w = svc.agendaDays('2026-10-12', 7);
+  assert.equal(w.to, '2026-10-18');
+  assert.equal(w.week.ttp, 2, 'Monday + Wednesday; the previous Sunday is not counted');
+  assert.equal(w.week.hoursSeconds, 1500);
+  // later in the same week the box keeps growing until Sunday night
+  clock.set(new Date(2026, 9, 18, 22, 0).getTime()); pomodoro(svc, clock, t.id); // Sunday
+  clock.set(new Date(2026, 9, 19, 9, 0).getTime()); pomodoro(svc, clock, t.id);  // next Monday
+  w = svc.agendaDays('2026-10-12', 7);
+  assert.equal(w.week.ttp, 3);
+  assert.equal(w.week.hoursSeconds, 3000);
+  assert.equal(svc.agendaDays('2026-10-19', 7).week.ttp, 1, 'the next week starts from zero');
+});
+
+test('a Sunday-first week (Sun–Sat) attributes each record to the right week', async () => {
+  const { svc, clock } = await setup(new Date(2026, 9, 11, 9, 0));
+  for (const at of [new Date(2026, 9, 10, 23, 30), new Date(2026, 9, 11, 0, 30), new Date(2026, 9, 17, 23, 0), new Date(2026, 9, 18, 0, 10)]) {
+    clock.set(at.getTime()); pomodoro(svc, clock, null);
+  }
+  // sessions end 25 min after they start: Sat 10 23:55, Sun 11 00:55, Sat 17 23:25, Sun 18 00:35
+  assert.equal(svc.agendaDays('2026-10-04', 7).week.ttp, 1, 'Sun 4 – Sat 10');
+  assert.equal(svc.agendaDays('2026-10-11', 7).week.ttp, 2, 'Sun 11 – Sat 17');
+  assert.equal(svc.agendaDays('2026-10-18', 7).week.ttp, 1, 'Sun 18 – Sat 24');
+  assert.equal(svc.agendaDays('2026-10-12', 7).week.ttp, 2, 'the same records in a Monday-first week (Mon 12 – Sun 18: Sat 17 + Sun 18)');
+});
+
 // ------------------------------------------------------------------ notes
 
 test('daily notes: create, edit, delete, independent of tasks, persisted', async () => {

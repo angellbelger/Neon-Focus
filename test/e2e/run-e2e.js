@@ -339,6 +339,8 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   const todayKey = await page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
   const addDaysKey = (key, n) => { const [y, m, d] = key.split('-').map(Number); const dt = new Date(y, m - 1, d + n); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; };
   const tomorrowKey = addDaysKey(todayKey, 1);
+  const mondayOf = (key) => { const [y, m, d] = key.split('-').map(Number); return addDaysKey(key, -((new Date(y, m - 1, d).getDay() + 6) % 7)); };
+  const thisMonday = mondayOf(todayKey);
 
   // tags: create in the manager, reuse on two tasks
   await page.click('[data-nav="tasks"]');
@@ -382,9 +384,15 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   await page.waitForSelector(`.ag-day[data-date="${todayKey}"]`);
   const order = await page.locator('.ag-day').evaluateAll((els) => els.map((e) => e.dataset.date));
   assert.equal(order.length, 7);
-  assert.equal(order[0], todayKey, 'today is at the top');
-  assert.deepEqual(order, [0, 1, 2, 3, 4, 5, 6].map((n) => addDaysKey(todayKey, -n)), 'then the six previous days, newest first');
-  step('Agenda opens with today at the top, then the previous six days in descending order');
+  assert.deepEqual(order, [0, 1, 2, 3, 4, 5, 6].map((n) => addDaysKey(thisMonday, n)), 'Monday to Sunday of the current week');
+  const weekdays = await page.locator('.ag-day').evaluateAll((els) => els.map((e) => new Date(`${e.dataset.date}T12:00`).getDay()));
+  assert.deepEqual(weekdays, [1, 2, 3, 4, 5, 6, 0]);
+  assert.equal(await page.locator('.ag-day[data-today="true"]').count(), 1, 'exactly one day carries the today accent');
+  assert.equal(await page.locator('.ag-day[data-today="true"]').getAttribute('data-date'), todayKey);
+  const todayVisible = await page.locator('.ag-day[data-today="true"] .ag-day__num').evaluate((el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; });
+  assert.ok(todayVisible, "today's date is in view without scrolling");
+  assert.match(await page.textContent('#ag-week-title'), /^This week · W\d+$/);
+  step(`Agenda opens on the calendar week Monday ${thisMonday} – Sunday ${addDaysKey(thisMonday, 6)}, today (${todayKey}) highlighted and in view`);
   const dayTitles = async (key) => page.locator(`.ag-day[data-date="${key}"] .ag-task__title`).allTextContents();
   assert.ok((await dayTitles(todayKey)).includes('English Listening Practice'));
   assert.ok((await dayTitles(todayKey)).includes('English but no tag'));
@@ -432,7 +440,36 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   const after = await dayStats(todayKey);
   assert.equal(after.ttp, before.ttp + 2);
   assert.equal(after.hoursSeconds - before.hoursSeconds, 4, 'only the English-tagged session adds to H.E. (4 s in fast mode)');
-  step(`TTP updates live (${before.ttp} -> ${after.ttp}); H.E. counts only the English-tagged session`);
+  // the week box covers the whole Monday–Sunday week (future days included) and updates live
+  const week = await page.evaluate((m) => window.pomodoro.agenda.days(m, 7), thisMonday);
+  assert.equal(week.from, thisMonday);
+  assert.equal(week.to, addDaysKey(thisMonday, 6));
+  assert.ok(week.week.ttp >= after.ttp);
+  await waitFor(page, (v) => document.querySelector('#ag-week-ttp').textContent === `${v}P`, week.week.ttp);
+  step(`TTP updates live (${before.ttp} -> ${after.ttp}); H.E. counts only the English-tagged session; week box = whole-week total (${week.week.ttp}P)`);
+
+  // "Weeks start on" in Settings drives the Agenda week (single source of truth)
+  const sundayOf = (key) => { const [y, m, d] = key.split('-').map(Number); return addDaysKey(key, -new Date(y, m - 1, d).getDay()); };
+  const thisSunday = sundayOf(todayKey);
+  const weekDates = () => page.locator('.ag-day').evaluateAll((els) => els.map((e) => e.dataset.date));
+  await page.click('[data-nav="settings"]');
+  await page.selectOption('#s-weekstart', '0');
+  await waitFor(page, () => window.pomodoro.settings.get().then((s) => s.weekStart === 0));
+  await page.click('[data-nav="agenda"]');
+  await waitFor(page, (k) => document.querySelector('.ag-day')?.dataset.date === k, thisSunday);
+  assert.deepEqual(await weekDates(), [0, 1, 2, 3, 4, 5, 6].map((n) => addDaysKey(thisSunday, n)), 'Sunday to Saturday');
+  assert.deepEqual(await page.locator('.ag-day').evaluateAll((els) => els.map((e) => new Date(`${e.dataset.date}T12:00`).getDay())), [0, 1, 2, 3, 4, 5, 6]);
+  assert.equal(await page.locator('.ag-day[data-today="true"]').getAttribute('data-date'), todayKey);
+  const sunWeek = await page.evaluate((k) => window.pomodoro.agenda.days(k, 7), thisSunday);
+  await waitFor(page, (v) => document.querySelector('#ag-week-ttp').textContent === `${v}P`, sunWeek.week.ttp);
+  assert.equal(await page.locator('#ag-cal .minical__dow').first().textContent(), new Date(2026, 0, 4).toLocaleDateString('en-GB', { weekday: 'narrow' }), 'mini calendar starts on Sunday too');
+  // changing the setting while the Agenda is open reorganises it at once
+  await page.evaluate(() => window.pomodoro.settings.update({ weekStart: 1 }));
+  await waitFor(page, (k) => document.querySelector('.ag-day')?.dataset.date === k, thisMonday);
+  assert.deepEqual(await weekDates(), [0, 1, 2, 3, 4, 5, 6].map((n) => addDaysKey(thisMonday, n)), 'back to Monday to Sunday');
+  await waitFor(page, (v) => document.querySelector('#ag-week-ttp').textContent === `${v}P`, week.week.ttp);
+  assert.equal(await page.inputValue('#s-weekstart'), '1', 'Settings shows the same value');
+  step(`"Weeks start on" Sunday -> Agenda ${thisSunday}..${addDaysKey(thisSunday, 6)} (week box ${sunWeek.week.ttp}P); back to Monday live -> ${thisMonday}..${addDaysKey(thisMonday, 6)}`);
 
   // daily notes: create, edit, delete; persist after restart
   await page.click(`.ag-day[data-date="${todayKey}"] .ag-tool--note`);
@@ -479,13 +516,23 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   await waitFor(page, () => document.querySelector('#ag-years .planner[aria-current="true"]').dataset.expanded === 'true');
   assert.equal(await page.locator('#ag-years .planner[aria-current="true"] button.planner__note').textContent(), quote, 'full note, unchanged');
   await page.locator('#ag-years .planner[aria-current="true"] button.planner__note').click();
-  assert.equal(await page.locator('.ag-day').first().getAttribute('data-date'), '2024-12-31', 'a past planner opens on its last day');
+  assert.equal(await page.locator('.ag-day').first().getAttribute('data-date'), '2024-12-30', 'a past planner opens on its last week (Mon 30 Dec 2024 – Sun 5 Jan 2025)');
+  assert.equal(await page.locator('.ag-day').last().getAttribute('data-date'), '2025-01-05');
+  assert.equal(await page.locator('.ag-day[data-today="true"]').count(), 0);
+  assert.match(await page.textContent('#ag-week-title'), /^Week 1$/, 'ISO week 1 of 2025');
   assert.equal(await page.locator('#ag-years .planner[aria-current="true"] .planner__year').textContent(), '2024');
   assert.equal((await page.textContent('#agenda-heading')).trim(), 'Cambridge 2024', 'heading follows the selected planner');
   await page.click('#ag-today');
   await page.waitForSelector(`.ag-day[data-date="${todayKey}"]`);
-  assert.equal(await page.locator('.ag-day').first().getAttribute('data-date'), todayKey);
+  assert.equal(await page.locator('.ag-day').first().getAttribute('data-date'), thisMonday);
   assert.equal((await page.textContent('#agenda-heading')).trim(), `Cambridge ${nowYear}`);
+  // a week away from today does not stick: reopening the Agenda lands on the current week
+  await page.click('#ag-prev');
+  await page.waitForSelector(`.ag-day[data-date="${addDaysKey(thisMonday, -7)}"]`);
+  await page.click('[data-nav="tasks"]');
+  await page.click('[data-nav="agenda"]');
+  await page.waitForSelector(`.ag-day[data-date="${todayKey}"]`);
+  assert.equal(await page.locator('.ag-day').first().getAttribute('data-date'), thisMonday, 'reopening shows the current week');
   const creditColor = await page.locator('.credit').evaluate((el) => getComputedStyle(el).color);
   assert.match(creditColor, /62, 242, 255/, 'cyan footer credit');
   step(`planners newest first (${yearsShown.join(', ')}), equal-height cards, emerald 1 January note expands/collapses, "Cambridge <year>" heading, cyan credit`);

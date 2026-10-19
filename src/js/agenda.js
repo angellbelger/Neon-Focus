@@ -1,5 +1,7 @@
-// Agenda: the digital version of the paper planner. Seven days per "page",
-// newest first (today at the top when showing the current days); each day lists the tasks dated for it (the same task rows
+// Agenda: the digital version of the paper planner. One calendar week per
+// "page" like a printed agenda, starting on the day chosen in Settings
+// ("Weeks start on": Monday → Monday–Sunday, Sunday → Sunday–Saturday). It
+// opens on the week holding today, which carries the neon accent; each day lists the tasks dated for it (the same task rows
 // as the Tasks section), a free-text note, and a box on the far right with
 // TTP (Total Pomodoro) and H.E. (Hours English) calculated from sessions.
 
@@ -13,8 +15,10 @@ import { openEditor } from './tasks.js';
 const LOCALE = 'en-GB';
 
 const state = {
-  weekStart: null,     // 'YYYY-MM-DD' of the oldest day shown (the page covers weekStart..weekStart+6)
-  followToday: true,   // page is anchored on today (re-anchors after midnight)
+  weekStart: null,     // 'YYYY-MM-DD' of the first day shown (the page covers it and the next six days)
+  weekStartDay: null,  // Settings "Weeks start on" the page was built with (0 = Sunday, 1 = Monday)
+  followToday: true,   // page shows the current week (moves on when a new week starts)
+  scrollToToday: false, // bring today's row into view after the next render
   calMonth: null,      // ms inside the month shown in the mini calendar
   years: [],
   yearNotes: {},       // year -> note written on 1 January
@@ -34,19 +38,44 @@ function addDays(key, n) {
 
 const todayKey = () => isoDate(Date.now());
 
-/** First (oldest) day of the 7-day page whose newest day is `key`. */
-function pageEndingOn(key) {
-  return addDays(key, -6);
+/** "Weeks start on" from Settings, the single source of truth (0 = Sunday … 6 = Saturday). */
+function firstDayOfWeek() {
+  const v = Number(store.settings?.weekStart);
+  return Number.isInteger(v) && v >= 0 && v <= 6 ? v : 1;
 }
 
-/** Newest day on the current page. */
+/** First day of the calendar week that contains `key`, per Settings. */
+function weekOf(key, ws = firstDayOfWeek()) {
+  const dow = new Date(dateKeyToMs(key)).getDay(); // 0 = Sunday
+  return addDays(key, -((dow - ws + 7) % 7));
+}
+
+/** The last day on the current page (six days after the first). */
 function pageEnd() {
   return addDays(state.weekStart, 6);
 }
 
-/** The year of the planner this page belongs to: the year of its newest day. */
+const showsToday = () => { const t = todayKey(); return t >= state.weekStart && t <= pageEnd(); };
+
+/** Week number of the week starting on `first`. Monday weeks follow ISO 8601
+    (week 1 holds the first Thursday); other start days count the week that
+    holds 1 January as week 1 (the usual Sunday-first convention). */
+function weekNumber(first) {
+  const day = 86400000;
+  if (firstDayOfWeek() === 1) {
+    const thu = new Date(dateKeyToMs(addDays(first, 3)));
+    const jan1 = new Date(thu.getFullYear(), 0, 1);
+    return Math.floor(Math.round((thu - jan1) / day) / 7) + 1;
+  }
+  const last = new Date(dateKeyToMs(addDays(first, 6)));
+  const week1 = weekOf(isoDate(new Date(last.getFullYear(), 0, 1).getTime()));
+  return Math.round((dateKeyToMs(first) - dateKeyToMs(week1)) / day / 7) + 1;
+}
+
+/** The year of the planner this page belongs to: the year of its first day
+    (so the week holding 31 December stays in that year's planner). */
 function pageYear() {
-  return new Date(dateKeyToMs(pageEnd())).getFullYear();
+  return new Date(dateKeyToMs(state.weekStart)).getFullYear();
 }
 
 function rangeLabel(from, to) {
@@ -228,7 +257,7 @@ function renderCalendar() {
   const year = base.getFullYear();
   const month = base.getMonth();
   $('#ag-cal-title').textContent = base.toLocaleDateString(LOCALE, { month: 'long', year: 'numeric' });
-  const ws = store.settings ? Number(store.settings.weekStart) : 1;
+  const ws = firstDayOfWeek();
   const names = [];
   for (let i = 0; i < 7; i += 1) {
     names.push(new Date(2026, 0, 4 + ((ws + i) % 7)).toLocaleDateString(LOCALE, { weekday: 'narrow' }));
@@ -247,7 +276,7 @@ function renderCalendar() {
       'data-in-week': String(key >= state.weekStart && key <= weekEnd),
       'data-today': String(key === todayKey),
       'aria-label': new Date(year, month, dnum).toLocaleDateString(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' }),
-      onclick: () => goTo(pageEndingOn(key)),
+      onclick: () => goTo(weekOf(key)),
     }, String(dnum)));
   }
   $('#ag-cal').replaceChildren(...cells);
@@ -256,11 +285,11 @@ function renderCalendar() {
 async function renderSide() {
   const r = state.data;
   const label = r.hoursTag ? r.hoursTag.name : 'English';
-  $('#ag-week-title').textContent = pageEnd() === todayKey() ? 'Last 7 days' : 'These 7 days';
+  $('#ag-week-title').textContent = showsToday() ? `This week · W${weekNumber(state.weekStart)}` : `Week ${weekNumber(state.weekStart)}`;
   $('#ag-week-ttp').textContent = `${r.week.ttp}P`;
   $('#ag-week-he').textContent = hoursMinutes(r.week.hoursSeconds);
   $('#ag-week-he-label').title = `Hours ${label}`;
-  $('#ag-week-meta').textContent = r.week.tasks ? `${r.week.tasksDone} of ${plural(r.week.tasks, 'task')} done` : 'No tasks on these days';
+  $('#ag-week-meta').textContent = r.week.tasks ? `${r.week.tasksDone} of ${plural(r.week.tasks, 'task')} done` : 'No tasks this week';
   renderYears();
   renderCalendar();
 
@@ -293,9 +322,16 @@ function render(focusKey = null) {
   const caret = active && list.contains(active) && 'selectionStart' in active ? active.selectionStart : null;
 
   const label = r.hoursTag ? r.hoursTag.name : 'English';
-  // Newest day first: today (or the latest day of the page) at the top.
-  list.replaceChildren(...r.days.slice().reverse().map((d) => dayRow(d, label)));
+  // The seven days in calendar order from the configured first day, like a printed weekly agenda.
+  list.replaceChildren(...r.days.map((d) => dayRow(d, label)));
   $('#ag-range').textContent = rangeLabel(r.from, r.to);
+
+  if (state.scrollToToday && !key) {
+    state.scrollToToday = false;
+    const row = list.querySelector('.ag-day[data-today="true"]');
+    // Only scrolls when today is actually out of sight (late in the week on a small window).
+    if (row) row.scrollIntoView({ block: 'nearest' });
+  }
 
   if (key) {
     const el = list.querySelector(`[data-focus-key="${key}"]`);
@@ -322,9 +358,11 @@ async function load() {
 }
 
 function goTo(weekStart) {
-  state.weekStart = weekStart;
-  state.followToday = addDays(weekStart, 6) === todayKey();
-  state.calMonth = dateKeyToMs(addDays(weekStart, 6));
+  state.weekStartDay = firstDayOfWeek();
+  state.weekStart = weekOf(weekStart);
+  state.followToday = showsToday();
+  state.scrollToToday = state.followToday;
+  state.calMonth = dateKeyToMs(state.followToday ? todayKey() : state.weekStart);
   state.addingFor = null;
   state.editingNote = null;
   state.drafts = {};
@@ -333,10 +371,10 @@ function goTo(weekStart) {
 
 function openYear(year) {
   const now = new Date();
-  // Current year: today and the six days before it. Other years: the last
-  // days of that planner, newest first (31 December at the top).
-  if (year === now.getFullYear()) goTo(pageEndingOn(todayKey()));
-  else goTo(pageEndingOn(`${year}-12-31`));
+  // Current year: this week. Other years: the last week of that planner
+  // (the calendar week holding 31 December).
+  if (year === now.getFullYear()) goTo(weekOf(todayKey()));
+  else goTo(weekOf(`${year}-12-31`));
 }
 
 // ------------------------------------------------------------------ actions
@@ -400,12 +438,14 @@ async function deleteNote(date) {
 // ------------------------------------------------------------------ init
 
 export function initAgenda() {
-  state.weekStart = pageEndingOn(todayKey());
+  state.weekStartDay = firstDayOfWeek();
+  state.weekStart = weekOf(todayKey());
+  state.scrollToToday = true;
   state.calMonth = Date.now();
 
   $('#ag-prev').addEventListener('click', () => goTo(addDays(state.weekStart, -7)));
   $('#ag-next').addEventListener('click', () => goTo(addDays(state.weekStart, 7)));
-  $('#ag-today').addEventListener('click', () => goTo(pageEndingOn(todayKey())));
+  $('#ag-today').addEventListener('click', () => goTo(weekOf(todayKey())));
   $('#ag-cal-prev').addEventListener('click', () => {
     const d = new Date(state.calMonth); d.setDate(1); d.setMonth(d.getMonth() - 1); state.calMonth = d.getTime(); renderCalendar();
   });
@@ -422,11 +462,26 @@ export function initAgenda() {
 
   registerPage('agenda', {
     onShow: () => {
-      // After midnight, a page that was showing "today" moves on to the new day.
-      if (state.followToday && pageEnd() !== todayKey()) goTo(pageEndingOn(todayKey()));
-      else load();
+      // Opening the Agenda always lands on the current calendar week (also
+      // after Sunday midnight, when a new week begins).
+      if (!showsToday()) goTo(weekOf(todayKey()));
+      else { if (state.followToday) state.scrollToToday = true; load(); }
     },
   });
   api.data.onChanged(() => { if (currentPage() === 'agenda') load(); });
-  store.on('settings', () => { if (state.data && currentPage() === 'agenda') renderCalendar(); });
+  store.on('settings', () => {
+    // "Weeks start on" changed in Settings: rebuild the page around the same
+    // week (the one holding today, or the first day that was on screen).
+    if (firstDayOfWeek() !== state.weekStartDay) {
+      const anchor = showsToday() ? todayKey() : state.weekStart;
+      state.weekStartDay = firstDayOfWeek();
+      state.weekStart = weekOf(anchor);
+      state.followToday = showsToday();
+      state.addingFor = null;
+      state.editingNote = null;
+      if (state.data) load();   // reloads the days, the week box (TTP / H.E.) and the calendar
+      return;
+    }
+    if (state.data && currentPage() === 'agenda') renderCalendar();
+  });
 }

@@ -145,13 +145,13 @@
             <header class="agenda__head">
               <h1 id="agenda-heading" class="agenda__title">Cambridge <span class="agenda__year" id="ag-planner-name"></span></h1>
               <div class="period-nav">
-                <button class="icon-btn" id="ag-prev" aria-label="Previous 7 days (older)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+                <button class="icon-btn" id="ag-prev" aria-label="Previous week"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
                 <span class="period-nav__label" id="ag-range" aria-live="polite"></span>
-                <button class="icon-btn" id="ag-next" aria-label="Next 7 days (newer)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+                <button class="icon-btn" id="ag-next" aria-label="Next week"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
                 <button class="btn btn--small btn--ghost" id="ag-today">Today</button>
               </div>
             </header>
-            <ol class="agenda__days" id="ag-days" aria-label="Days, newest first"></ol>
+            <ol class="agenda__days" id="ag-days" aria-label="Days of the week, Monday to Sunday"></ol>
           </div>
 
           <aside class="agenda__side" aria-label="Planner">
@@ -161,7 +161,7 @@
             </nav>
 
             <section class="weekbox" aria-labelledby="ag-week-title">
-              <p class="side-title" id="ag-week-title">Last 7 days</p>
+              <p class="side-title" id="ag-week-title">This week</p>
               <dl class="tally">
                 <div><dt title="Total Pomodoro">TTP</dt><dd id="ag-week-ttp">0</dd></div>
                 <div><dt id="ag-week-he-label" title="Hours English">H.E.</dt><dd id="ag-week-he">0 min</dd></div>
