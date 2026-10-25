@@ -1,6 +1,6 @@
 /* ================================================================ Agenda
    A week per page, like the paper planner: ruled day rows, a big date,
-   tasks with checks, a note in red "ink", and a tally box on the far
+   tasks with checks, a note in emerald, and a tally box on the far
    right of every day (TTP / H.E.). The side column holds the yearly
    planners, the week and year tallies, and a month calendar. */
 
@@ -95,20 +95,20 @@
 .ag-task .tag-chips { margin-left: 0; }
 .ag-task__meta { display: inline-flex; gap: 10px; color: var(--text-3); font-size: var(--fs-xs); font-family: var(--font-mono); }
 
-/* note, in "ink" */
+/* daily note, in the same emerald as the 1 January planner notes */
 .ag-note__text {
   display: block; width: 100%;
   border: 0; background: transparent; padding: 4px 0 4px 12px; text-align: left;
-  border-left: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
-  color: var(--ink); font-style: italic; font-size: var(--fs-md); line-height: 1.55;
+  border-left: 2px solid color-mix(in srgb, var(--emerald-note) 55%, transparent);
+  color: var(--emerald-note); font-style: italic; font-size: var(--fs-md); line-height: 1.55;
   white-space: pre-wrap; overflow-wrap: anywhere; cursor: text;
 }
-.ag-note__text:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.ag-note__text:hover { background: color-mix(in srgb, var(--emerald-note) 6%, transparent); }
 .ag-note--editing { display: flex; flex-direction: column; gap: 8px; }
-.ag-note__input { width: 100%; min-height: 76px; color: var(--ink); font-style: italic; border-color: color-mix(in srgb, var(--ink) 40%, transparent); }
-.ag-note__input:focus-visible { border-color: var(--ink); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 20%, transparent); }
+.ag-note__input { width: 100%; min-height: 76px; color: var(--emerald-note); font-style: italic; border-color: color-mix(in srgb, var(--emerald-note) 40%, transparent); }
+.ag-note__input:focus-visible { border-color: var(--emerald-note); box-shadow: 0 0 0 3px color-mix(in srgb, var(--emerald-note) 20%, transparent); }
 .ag-note__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.ag-note__actions .btn--accent { background: var(--ink); border-color: var(--ink); box-shadow: none; }
+.ag-note__actions .btn--accent { background: var(--emerald-note); border-color: var(--emerald-note); box-shadow: none; }
 .ag-note__del { color: var(--danger); }
 .ag-note__hint { color: var(--text-3); font-size: var(--fs-xs); margin-left: auto; }
 
@@ -122,7 +122,8 @@
   background: transparent; color: var(--text-3); font-size: var(--fs-sm);
 }
 .ag-tool span { color: var(--focus); font-size: 1.05rem; line-height: 1; width: 14px; text-align: center; }
-.ag-tool--note span { color: var(--ink); }
+.ag-tool--note span { color: var(--emerald-note); }
+.ag-tool--note:hover { color: var(--emerald-note); }
 .ag-tool:hover { color: var(--text); background: rgba(255, 255, 255, 0.03); }
 .ag-add { display: grid; grid-template-columns: 20px 1fr; align-items: center; gap: 10px; }
 .ag-add__plus { color: var(--focus); text-align: center; }

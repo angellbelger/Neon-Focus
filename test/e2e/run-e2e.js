@@ -480,7 +480,14 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   await page.fill(`.ag-day[data-date="${todayKey}"] .ag-note__input`, "New Year's Eve with my daughter. Fireworks!");
   await page.press(`.ag-day[data-date="${todayKey}"] .ag-note__input`, 'Control+Enter');
   await waitFor(page, (k) => document.querySelector(`.ag-day[data-date="${k}"] .ag-note__text`)?.textContent.endsWith('Fireworks!'), todayKey);
-  step('daily note created and edited');
+  const css = (sel, prop = 'color') => page.locator(sel).first().evaluate((el, p) => getComputedStyle(el)[p], prop);
+  const plannerEmerald = await page.evaluate(() => { const el = document.createElement('span'); el.style.color = 'var(--emerald-note)'; document.body.append(el); const c = getComputedStyle(el).color; el.remove(); return c; });
+  assert.equal(plannerEmerald, 'rgb(52, 211, 153)');
+  assert.equal(await css(`.ag-day[data-date="${todayKey}"] .ag-note__text`), plannerEmerald, 'daily note text in the planner emerald');
+  assert.match(await css(`.ag-day[data-date="${todayKey}"] .ag-note__text`, 'borderLeftColor'), /52, 211, 153|srgb 0\.2039\d* 0\.8274\d* 0\.6\b/, 'note margin line emerald');
+  const otherDay = await page.locator('.ag-day .ag-tool--note').count();
+  if (otherDay) assert.equal(await css('.ag-day .ag-tool--note span'), plannerEmerald, '"+ Note" icon emerald');
+  step('daily note created and edited; note, its margin line and the "+ Note" icon use the planner emerald');
 
   // year navigation: only years with data
   await page.evaluate(() => window.pomodoro.tasks.create({ title: 'Old planner entry', scheduledDate: '2024-05-10' }));
