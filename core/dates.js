@@ -41,4 +41,54 @@ function addDaysToDate(value, n) {
   return localDate(d.getTime());
 }
 
-module.exports = { localDate, cleanDate, startOfLocalDate, addDaysToDate, DATE_RE };
+// ---------------------------------------------------------------- calendar weeks
+// Week numbers follow Settings → "Weeks start on" (0 = Sunday … 6 = Saturday),
+// exactly like the Agenda:
+//  - Monday weeks use ISO 8601: week 1 holds the first Thursday of the year,
+//    so it can begin in late December (and some years have a week 53);
+//  - other start days count the week that holds 1 January as week 1.
+// A week's "anchor" is the day that decides which year it belongs to (ISO:
+// its Thursday; otherwise its last day). Weekly legacy totals are counted in
+// any date range that contains their anchor, so they land in the same week,
+// year and month everywhere.
+
+const dayOfWeek = (key) => new Date(startOfLocalDate(key)).getDay();
+const pad2 = (n) => String(n).padStart(2, '0');
+const jan = (year, day) => `${year}-01-${pad2(day)}`;
+
+/** First day of the week (per weekStart) that contains date `key`. */
+function startOfWeek(key, weekStart = 1) {
+  return addDaysToDate(key, -((dayOfWeek(key) - weekStart + 7) % 7));
+}
+
+function daysBetween(a, b) {
+  return Math.round((startOfLocalDate(b) - startOfLocalDate(a)) / 86400000);
+}
+
+function firstWeekStart(year, weekStart) {
+  return weekStart === 1 ? startOfWeek(jan(year, 4), 1) : startOfWeek(jan(year, 1), weekStart);
+}
+
+/** {year, week} of the calendar week that contains `key`. */
+function weekOfDate(key, weekStart = 1) {
+  const start = startOfWeek(cleanDate(key), weekStart);
+  const anchor = addDaysToDate(start, weekStart === 1 ? 3 : 6);
+  const year = Number(anchor.slice(0, 4));
+  return { year, week: daysBetween(firstWeekStart(year, weekStart), start) / 7 + 1 };
+}
+
+/** Number of weeks (52 or 53) in `year`. */
+function weeksInYear(year, weekStart = 1) {
+  return daysBetween(firstWeekStart(year, weekStart), firstWeekStart(year + 1, weekStart)) / 7;
+}
+
+/** Dates of week `week` of `year`: { from, to, anchor } as 'YYYY-MM-DD'. */
+function weekRange(year, week, weekStart = 1) {
+  const from = addDaysToDate(firstWeekStart(year, weekStart), (week - 1) * 7);
+  return { from, to: addDaysToDate(from, 6), anchor: addDaysToDate(from, weekStart === 1 ? 3 : 6) };
+}
+
+module.exports = {
+  localDate, cleanDate, startOfLocalDate, addDaysToDate, DATE_RE,
+  startOfWeek, weekOfDate, weeksInYear, weekRange,
+};

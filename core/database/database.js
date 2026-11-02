@@ -18,7 +18,7 @@ const initSqlJs = require('sql.js');
 
 const { localDate } = require('../dates');
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 /**
  * Ordered schema migrations. Each runs once, inside a transaction.
@@ -40,6 +40,7 @@ const MIGRATIONS = [
       }
     },
   },
+  { version: 4, file: path.join('migrations', '004-legacy-data.sql') },
 ];
 
 /** Error with a message meant for the user (bad or incompatible import file). */
@@ -209,6 +210,7 @@ class Database {
         tags: one('SELECT COUNT(*) FROM tags'),
         notes: one('SELECT COUNT(*) FROM daily_notes'),
         goals: one('SELECT COUNT(*) FROM goals'),
+        legacy: one('SELECT COUNT(*) FROM legacy_records'),
         sessions: one('SELECT COUNT(*) FROM sessions'),
         pomodoros: one("SELECT COUNT(*) FROM sessions WHERE session_type = 'focus' AND completed = 1"),
         firstSessionAt: one('SELECT MIN(started_at) FROM sessions'),

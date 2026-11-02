@@ -460,3 +460,16 @@ fieldset.stack legend { padding: 0; margin-bottom: 8px; }
   .tag-admin__colors { grid-column: 1 / -1; }
   .tag-admin__use { display: none; }
 }
+
+/* ---------------------------------------------------------------- legacy data
+   Figures that include weekly totals entered by hand (Settings → Legacy data)
+   carry this small, quiet marker: a dashed amber outline, like pencil on paper. */
+.legacy-mark {
+  display: inline-flex; align-items: center; flex: none;
+  padding: 0 6px; border-radius: var(--r-pill);
+  border: 1px dashed color-mix(in srgb, var(--amber) 55%, transparent);
+  color: color-mix(in srgb, var(--amber) 85%, var(--text-2));
+  font-family: var(--font-ui); font-size: 0.625rem; line-height: 1.6; font-weight: 500;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.legacy-mark--inline { margin-right: 6px; vertical-align: 1px; }

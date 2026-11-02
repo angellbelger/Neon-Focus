@@ -6,6 +6,8 @@ import { $, $$, h, radioGroup, toast, toastError, confirmAction } from './ui.js'
 import { playAlarm } from './audio.js';
 import { registerPage } from './navigation.js';
 import { plural, dateShort } from './format.js';
+import { loadTags } from './tags.js';
+import { openLegacyManager } from './legacy.js';
 
 let themeRadios;
 
@@ -22,7 +24,7 @@ function fill(s) {
     if (!el.name || !(el.name in s)) continue;
     if (el === document.activeElement && el.type !== 'checkbox') continue; // don't overwrite what the user is typing
     if (el.type === 'checkbox') el.checked = Boolean(s[el.name]);
-    else el.value = String(s[el.name]);
+    else el.value = s[el.name] === null ? '' : String(s[el.name]);
     el.removeAttribute('aria-invalid');
   }
   $$('.field__error', form).forEach((e) => e.remove());
@@ -31,6 +33,41 @@ function fill(s) {
   $('#s-alarm').disabled = !s.soundEnabled;
   $('#s-volume').disabled = !s.soundEnabled;
   themeRadios.set(s.theme);
+}
+
+/** The tags currently shown in the Agenda (same rule as the main process). */
+function agendaTagSelection(tags, s) {
+  if (Array.isArray(s.hoursTagIds)) return s.hoursTagIds.filter((id) => tags.some((t) => t.id === id));
+  const legacy = s.hoursTagId && tags.find((t) => t.id === s.hoursTagId);
+  const english = tags.find((t) => t.name.toLowerCase() === 'english');
+  const one = legacy || english;
+  return one ? [one.id] : [];
+}
+
+/** Settings → Agenda → Tags in the Agenda: one switchable chip per tag (new tags appear automatically). */
+async function fillAgendaTags() {
+  const box = $('#s-agenda-tags');
+  let tags = [];
+  try { tags = await loadTags(true); } catch (_) { /* nothing to show */ }
+  const s = store.settings || {};
+  const selected = new Set(agendaTagSelection(tags, s));
+  if (!tags.length) {
+    box.replaceChildren(h('span.tag-toggles__empty', {}, 'No tags yet. Create them in Tasks → Manage tags.'));
+    return;
+  }
+  box.replaceChildren(...tags.map((t) => h(`button.tag.tag-toggle.tag--${t.color}`, {
+    type: 'button',
+    'aria-pressed': String(selected.has(t.id)),
+    dataset: { tagId: String(t.id) },
+    title: selected.has(t.id) ? `Hide ${t.name} hours in the Agenda` : `Show ${t.name} hours in the Agenda`,
+    onclick: async (e) => {
+      const btn = e.currentTarget;
+      const on = btn.getAttribute('aria-pressed') !== 'true';
+      const next = tags.filter((x) => (x.id === t.id ? on : selected.has(x.id))).map((x) => x.id);
+      btn.setAttribute('aria-pressed', String(on)); // immediate feedback; the saved list re-renders the chips
+      await save({ hoursTagIds: next });
+    },
+  }, t.name)));
 }
 
 function showFieldError(el, message) {
@@ -82,6 +119,7 @@ function backupDescription(sum) {
   if (sum.tags) extra.push(plural(sum.tags, 'tag'));
   if (sum.notes) extra.push(plural(sum.notes, 'daily note'));
   if (sum.goals) extra.push(plural(sum.goals, 'goal'));
+  if (sum.legacy) extra.push(plural(sum.legacy, 'legacy record'));
   let range = '';
   if (sum.firstSessionAt && sum.lastSessionAt) {
     const day = (iso) => { const ms = Date.parse(iso); return `${dateShort(ms)} ${new Date(ms).getFullYear()}`; };
@@ -169,6 +207,7 @@ export function initSettings() {
     } catch (err) { toastError(err); }
   });
   $('#s-import').addEventListener('click', importDatabase);
+  $('#s-legacy').addEventListener('click', openLegacyManager);
   $('#s-reveal').addEventListener('click', () => api.data.revealDatabase().catch(toastError));
   $('#s-defaults').addEventListener('click', async () => {
     const ok = await confirmAction({
@@ -182,16 +221,19 @@ export function initSettings() {
   $('#s-clear').addEventListener('click', async () => {
     const ok = await confirmAction({
       title: 'Delete all data?',
-      text: 'Your whole history, every task, step, tag, daily note and goal, and all statistics will be permanently deleted. Settings are kept. Consider backing up the database first.',
+      text: 'Your whole history, every task, step, tag, daily note, goal and legacy record, and all statistics will be permanently deleted. Settings are kept. Consider backing up the database first.',
       ok: 'Delete everything',
     });
     if (!ok) return;
     try { await api.data.clearAll(); toast('All data was deleted.'); } catch (err) { toastError(err); }
   });
 
-  store.on('settings', (s) => { applyAppearance(s); fill(s); });
+  store.on('settings', (s) => { applyAppearance(s); fill(s); fillAgendaTags(); });
+  api.data.onChanged(() => fillAgendaTags());
+  fillAgendaTags();
   registerPage('settings', {
     onShow: async () => {
+      fillAgendaTags();
       try {
         const info = await api.app.info();
         $('#s-db-path').textContent = `Your data is stored in a local SQLite database: ${info.dbPath}`;

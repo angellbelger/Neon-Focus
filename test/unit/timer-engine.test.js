@@ -148,19 +148,80 @@ test('only one timer can run: start while running is a no-op', async () => {
   assert.equal(svc.db.get('SELECT COUNT(*) n FROM active_session').n, 1);
 });
 
-test('sleep (clock jump) pauses at the last observed moment instead of completing', async () => {
+test('screen lock / display off: the countdown keeps running and is exact on return', async () => {
   const { svc, clock, engine } = await setup();
-  const notices = [];
-  engine.on('notice', (n) => notices.push(n.reason));
+  const t0 = clock();
   engine.start();
   run(clock, engine, 5 * MIN);
-  clock.advance(3 * 60 * MIN);   // laptop lid closed for 3 hours
-  engine.tick();
+  engine.suspend();               // screen locks (or display sleeps)
+  assert.equal(engine.getState().status, 'running', 'locking never pauses');
+  clock.advance(10 * MIN);        // app frozen by the OS: no ticks at all
+  engine.wake();                  // unlock
+  const s = engine.getState();
+  assert.equal(s.status, 'running');
+  assert.equal(s.elapsedMs, 15 * MIN, 'the 10 locked minutes were counted');
+  assert.equal(s.plannedMs - s.elapsedMs, 10 * MIN, '10:00 left on return');
+  assert.equal(sessions(svc).length, 0);
+  assert.equal(engine.getState().notice, null, 'no "paused" banner');
+  // a plain long gap (no lock event, e.g. throttled process) behaves the same
+  clock.advance(4 * MIN); engine.tick();
+  assert.equal(engine.getState().elapsedMs, 19 * MIN);
+  assert.equal(svc.db.get('SELECT last_heartbeat_at h FROM active_session').h, new Date(t0 + 19 * MIN).toISOString(), 'state saved on return');
+});
+
+test('a session that ends while the computer sleeps is completed once, at its real end time, with the alarm on wake', async () => {
+  const { svc, clock, engine } = await setup();
+  const t0 = clock();
+  const done = [];
+  engine.on('completed', (e) => done.push(e));
+  engine.start();
+  run(clock, engine, 5 * MIN);
+  engine.suspend();               // lid closed
+  clock.advance(3 * 60 * MIN);    // 3 hours asleep
+  assert.equal(done.length, 0, 'nothing can fire while asleep');
+  engine.wake(); engine.tick(); engine.wake(); // resume + unlock + window focus
+  assert.equal(done.length, 1, 'alarm/notification event fires once, on wake');
+  assert.equal(done[0].endedAt, t0 + 25 * MIN);
+  const rows = sessions(svc);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].status, 'completed');
+  assert.equal(rows[0].actual_duration_seconds, 1500);
+  assert.equal(rows[0].ended_at, new Date(t0 + 25 * MIN).toISOString(), 'ended when it reached zero, not on wake');
+  const s = engine.getState();
+  assert.equal(s.status, 'idle');
+  assert.equal(s.mode, 'short_break');
+  assert.equal(svc.today().pomodoros, 1);
+});
+
+test('auto-start after a session that ended during sleep: the next one starts on wake with its full time', async () => {
+  const { svc, clock, engine } = await setup();
+  svc.settingsRepo.update({ autoStartBreaks: true });
+  engine.refreshSettings();
+  engine.start();
+  run(clock, engine, 20 * MIN);
+  engine.suspend();
+  clock.advance(60 * MIN);
+  const woke = clock();
+  engine.wake();
+  const s = engine.getState();
+  assert.equal(s.status, 'running');
+  assert.equal(s.mode, 'short_break');
+  assert.equal(s.startedAt, woke);
+  assert.equal(s.elapsedMs, 0);
+  assert.equal(sessions(svc).length, 1);
+});
+
+test('a session paused by the user stays paused through sleep', async () => {
+  const { clock, engine } = await setup();
+  engine.start();
+  run(clock, engine, 5 * MIN);
+  engine.pause();
+  engine.suspend();
+  clock.advance(2 * 60 * MIN);
+  engine.wake();
   const s = engine.getState();
   assert.equal(s.status, 'paused');
   assert.equal(s.elapsedMs, 5 * MIN);
-  assert.equal(sessions(svc).length, 0);
-  assert.deepEqual(notices, ['sleep']);
 });
 
 test('restart restores a running session as paused at its last heartbeat', async () => {

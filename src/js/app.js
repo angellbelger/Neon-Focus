@@ -10,6 +10,7 @@ import { initAgenda } from './agenda.js';
 import { initGoals } from './goals.js';
 import { initHistory } from './history.js';
 import { initSettings, applyAppearance } from './settings.js';
+import { initLegacy } from './legacy.js';
 import { playAlarm, unlockAudio } from './audio.js';
 import { MODE_LABEL } from './format.js';
 
@@ -27,6 +28,7 @@ async function boot() {
   initGoals();
   initHistory();
   initSettings();
+  initLegacy();
   initNavigation();
 
   store.setSettings(settings);

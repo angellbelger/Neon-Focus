@@ -109,6 +109,12 @@ function createWindow() {
   });
   mainWindow.on('closed', () => { mainWindow = null; });
 
+  // Coming back to the window (from the tray, another app, a minimised
+  // state): re-check the clock so the countdown shown is current at once.
+  for (const ev of ['focus', 'show', 'restore']) {
+    mainWindow.on(ev, () => { if (services) services.engine.wake(); });
+  }
+
   // No navigation away from the app, no new windows.
   mainWindow.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('app://local/')) e.preventDefault(); });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -177,8 +183,15 @@ async function boot() {
     }
   }, 250);
 
+  // Sleep, lock and screen-off never pause the countdown (it runs on
+  // wall-clock time). These only save state before and re-check the clock
+  // after, so the remaining time, completion and alarm are right on return.
+  // Nothing here keeps the computer or the display awake.
   powerMonitor.on('suspend', () => engine.suspend());
-  powerMonitor.on('resume', () => engine.tick());
+  powerMonitor.on('lock-screen', () => engine.suspend());
+  powerMonitor.on('resume', () => engine.wake());
+  powerMonitor.on('unlock-screen', () => engine.wake());
+  powerMonitor.on('user-did-become-active', () => engine.wake());
 
   nativeTheme.themeSource = 'dark';
   if (process.platform === 'darwin') {

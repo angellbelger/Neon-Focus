@@ -140,7 +140,7 @@
   font-family: var(--font-mono);
 }
 .ag-day__stats div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.ag-day__stats dt { color: var(--text-3); font-size: 0.6875rem; }
+.ag-day__stats dt { color: var(--text-3); font-size: 0.6875rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ag-day__stats dd { margin: 0; color: var(--text); font-size: 0.8125rem; white-space: nowrap; }
 .ag-day__stats div:first-child dd { color: var(--focus); }
 
@@ -191,6 +191,18 @@
 .tally dd { margin: 0; font-size: 1.15rem; color: var(--text); }
 .tally div:first-child dd { color: var(--focus); }
 .weekbox__meta { margin-top: 8px; color: var(--text-3); font-size: var(--fs-xs); }
+/* one line per tag chosen in Settings → Agenda, by name: "English = 4 h 30 min" */
+.tally dd { white-space: nowrap; }
+.tally .tally__row--tag { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: baseline; }
+.tally .tally__row--tag dt { min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; }
+.tally .tally__row--tag dt::after { content: none; }
+.tally__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tally .tally__row--tag dd { font-size: 0.95rem; color: var(--text); }
+.weekbox--year .tally .tally__row--tag dd { font-size: 0.9rem; }
+.tally__row--ttp + .tally__row--tag { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--line); }
+.tally__dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--c, var(--cyan)); box-shadow: 0 0 calc(6px * var(--glow)) var(--c, var(--cyan)); }
+/* share of the box that comes from legacy records */
+.weekbox__legacy { margin-top: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--text-3); font-size: var(--fs-xs); font-family: var(--font-mono); }
 .weekbox--year .tally dd { font-size: 1rem; }
 
 .minical__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
@@ -205,8 +217,6 @@
 .minical__day[data-in-week='true'] { background: color-mix(in srgb, var(--focus) 12%, transparent); color: var(--text); }
 .minical__day[data-today='true'] { color: var(--focus); font-weight: 600; box-shadow: inset 0 0 0 1px var(--focus); }
 
-.side-setting { display: flex; flex-direction: column; gap: 6px; color: var(--text-3); font-size: var(--fs-xs); }
-.side-setting select { height: 34px; font-size: var(--fs-sm); color: var(--text); }
 
 /* ---------------------------------------------------------------- narrower screens */
 @media (max-width: 1100px) {
@@ -227,7 +237,6 @@
   .agenda__days { order: 3; }
   .weekbox--year { order: 4; }
   .minical { order: 5; }
-  .side-setting { order: 6; }
   .planners__list { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x proximity; }
   .planners__list li { flex: 0 0 220px; scroll-snap-align: start; }
   .planners__list .planner { height: 100%; }

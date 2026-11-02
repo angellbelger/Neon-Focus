@@ -19,9 +19,13 @@ const MIN_RECORDED_MS = 1000;
  *  - Completion is processed exactly once: an in-memory guard, plus the active
  *    row being deleted and the session inserted (UNIQUE run_id) in a single
  *    transaction.
- *  - If the clock jumps forward while running (system sleep, frozen process),
- *    the session is paused at the last moment we observed it running. Time we
- *    cannot vouch for is never counted.
+ *  - A running session is a wall-clock countdown: it keeps going while the
+ *    screen is locked or off, the computer sleeps, or the app is in the
+ *    background or frozen by the OS. Nothing pauses it except the user. When
+ *    the app runs again (any tick, resume or unlock) the remaining time is
+ *    recomputed from the stored timestamps; a session that reached zero in
+ *    the meantime is completed exactly once at the moment it reached zero
+ *    (its real end time), and the alarm/notification fire then.
  *  - On restart, a running session is restored as paused at its last
  *    heartbeat, unless the heartbeat proves the planned duration had elapsed.
  */
@@ -186,21 +190,11 @@ class TimerEngine extends EventEmitter {
     return this.getState();
   }
 
-  pauseAt(atMs, reason = null) {
+  /** Pauses at `atMs` (only ever by the user: sleep and lock never pause). */
+  pauseAt(atMs) {
     const elapsed = Math.min(this.elapsedAt(atMs), this.active.plannedMs - 1);
     this.db.transaction(() => this.stateRepo.setPaused(elapsed, TimerEngine.iso(atMs)));
     this.reloadActive();
-    if (reason) {
-      this.notice = {
-        kind: 'auto-paused',
-        reason,
-        message: reason === 'sleep'
-          ? 'Paused because your computer went to sleep. Time asleep was not counted.'
-          : 'Paused automatically.',
-        at: this.clock(),
-      };
-      this.emit('notice', this.notice);
-    }
     this.emitState();
   }
 
@@ -273,12 +267,24 @@ class TimerEngine extends EventEmitter {
     this.emitState();
   }
 
-  /** System is about to sleep: pause now so sleep time is not counted. */
+  /** System is about to sleep (or the screen locks). The countdown keeps
+      running on wall-clock time; just complete it if it is already due and
+      save a heartbeat, so the state on disk is current. */
   suspend() {
+    if (!this.active || this.active.state !== 'running') return;
+    this.tick();
     if (this.active && this.active.state === 'running') {
-      this.tick(); // finish first if it was already due
-      if (this.active && this.active.state === 'running') this.pauseAt(this.clock(), 'sleep');
+      const now = this.clock();
+      this.lastHeartbeatAt = now;
+      this.stateRepo.heartbeat(TimerEngine.iso(now));
     }
+  }
+
+  /** The system woke up, the screen was unlocked or the window came back:
+      re-check the clock now and send everyone a fresh snapshot. */
+  wake() {
+    this.tick();
+    this.emitState();
   }
 
   /** Periodic check; safe to call at any frequency. */
@@ -292,22 +298,22 @@ class TimerEngine extends EventEmitter {
     const remainingAtSegStart = a.plannedMs - a.elapsedMs;
     const dueAt = a.segStartMs + remainingAtSegStart;
 
-    if (now - last > this.gapThresholdMs) {
-      // We weren't running for a while (sleep / suspended process).
-      if (last >= dueAt) this.complete(dueAt);
-      else this.pauseAt(last, 'sleep');
-      return;
-    }
+    // A long gap between ticks means the computer slept or the OS froze the
+    // app (screen off / locked). The countdown kept going all along, so the
+    // checks below are the same: complete at the moment it reached zero, or
+    // carry on with the remaining time computed from the timestamps.
+    const gap = now - last > this.gapThresholdMs;
 
     if (now >= dueAt) {
       this.complete(dueAt);
       return;
     }
 
-    if (now - (this.lastHeartbeatAt ?? 0) >= this.heartbeatMs) {
+    if (gap || now - (this.lastHeartbeatAt ?? 0) >= this.heartbeatMs) {
       this.lastHeartbeatAt = now;
       this.stateRepo.heartbeat(TimerEngine.iso(now));
     }
+    if (gap) this.emitState(); // windows recalculate from the fresh snapshot
   }
 
   // ---------------------------------------------------------------- internals

@@ -22,8 +22,11 @@ const SETTINGS_SCHEMA = {
   glowIntensity:        { type: 'int',  min: 0, max: 100, default: 60 },
   reduceMotion:         { type: 'bool', default: false },
   trayTimer:            { type: 'bool', default: true },
-  // Tag whose time the Agenda shows as H.E. (Hours English). null = the tag named "English".
+  // Earlier single choice (the tag shown as H.E.); only used while hoursTagIds is unset.
   hoursTagId:           { type: 'optInt', min: 1, max: 1e9, default: null },
+  // Tags whose hours the Agenda shows next to TTP, by name. null = not chosen
+  // yet (falls back to hoursTagId, else the tag named "English"); [] = TTP only.
+  hoursTagIds:          { type: 'idList', max: 20, default: null },
 };
 
 function defaultSettings() {
@@ -62,6 +65,18 @@ function validateSetting(key, value) {
         throw new SettingsValidationError(key, `${key} must be empty or a valid id.`);
       }
       return n;
+    }
+    case 'idList': {
+      if (value === null) return null;
+      if (!Array.isArray(value)) throw new SettingsValidationError(key, `${key} must be a list of tags.`);
+      const out = [];
+      for (const v of value) {
+        const n = Number(v);
+        if (!Number.isInteger(n) || n < 1 || n > 1e9) throw new SettingsValidationError(key, `${key} must contain valid tag ids.`);
+        if (!out.includes(n)) out.push(n);
+      }
+      if (out.length > spec.max) throw new SettingsValidationError(key, `Choose up to ${spec.max} tags.`);
+      return out;
     }
     case 'bool':
       if (typeof value !== 'boolean') throw new SettingsValidationError(key, `${key} must be on or off.`);

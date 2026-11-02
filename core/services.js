@@ -16,7 +16,10 @@ const { StepsRepository } = require('./database/repositories/steps-repository');
 const { TagsRepository } = require('./database/repositories/tags-repository');
 const { NotesRepository } = require('./database/repositories/notes-repository');
 const { GoalsRepository } = require('./database/repositories/goals-repository');
-const { localDate, cleanDate, startOfLocalDate, addDaysToDate } = require('./dates');
+const { LegacyRepository } = require('./database/repositories/legacy-repository');
+const {
+  localDate, cleanDate, startOfLocalDate, addDaysToDate, weekRange, weeksInYear, weekOfDate,
+} = require('./dates');
 const { TimerEngine } = require('./timer-engine');
 const stats = require('./stats');
 
@@ -38,6 +41,7 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
   const tagsRepo = new TagsRepository(db, clock);
   const notesRepo = new NotesRepository(db, clock);
   const goalsRepo = new GoalsRepository(db, clock);
+  const legacyRepo = new LegacyRepository(db, clock);
   const engine = new TimerEngine({
     db, stateRepo, sessionsRepo, tasksRepo, settingsRepo, clock, secondsPerMinute, ...engineOptions,
   });
@@ -50,11 +54,43 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
     const rows = sessionsRepo.overlapping(iso(prev.start), iso(cur.end));
     const tasksCompleted = tasksRepo.completedBetween(iso(cur.start), iso(cur.end)).length;
     const tasksCompletedPrev = tasksRepo.completedBetween(iso(prev.start), iso(prev.end)).length;
+    // Legacy weekly totals for both periods, placed on their week's anchor day
+    // (same rule as the Agenda and Activity Statistics, same week setting).
+    const legacy = legacyIn(prev.start, cur.end).map((l) => ({
+      anchorMs: startOfLocalDate(weekRange(l.year, l.week, settings.weekStart).anchor),
+      pomodoros: l.kind === 'pomodoros' ? l.value : 0,
+      seconds: l.kind === 'tag_hours' && l.tag_id ? l.value : 0,
+    }));
     const r = stats.buildReport({
-      period, anchor: anchorMs, sessions: rows, tasksCompleted, tasksCompletedPrev, settings, now: clock(),
+      period, anchor: anchorMs, sessions: rows, legacy, tasksCompleted, tasksCompletedPrev, settings, now: clock(),
     });
     r.firstSessionAt = sessionsRepo.firstStartedAt();
+    r.firstRecordAt = firstRecordAt();
+    r.years = productivityYears();
     return r;
+  }
+
+  /** Earliest moment with productivity data: the first session or the first legacy week. */
+  function firstRecordAt() {
+    const candidates = [];
+    const s = sessionsRepo.firstStartedAt();
+    if (s) candidates.push(Date.parse(s));
+    const ws = settingsRepo.getAll().weekStart;
+    for (const r of db.all('SELECT year, MIN(week) AS week FROM legacy_records GROUP BY year ORDER BY year LIMIT 1')) {
+      candidates.push(startOfLocalDate(weekRange(r.year, r.week, ws).from));
+    }
+    return candidates.length ? new Date(Math.min(...candidates)).toISOString() : null;
+  }
+
+  /** Years with productivity records (sessions or legacy data), plus the current year, oldest first. */
+  function productivityYears() {
+    const years = new Set([new Date(clock()).getFullYear()]);
+    for (const r of db.all("SELECT DISTINCT substr(ended_at, 1, 4) AS y FROM sessions WHERE substr(ended_at, 6, 5) NOT IN ('01-01', '12-31')")) years.add(Number(r.y));
+    for (const r of db.all("SELECT ended_at FROM sessions WHERE substr(ended_at, 6, 5) IN ('01-01', '12-31')")) {
+      years.add(new Date(Date.parse(r.ended_at)).getFullYear());
+    }
+    for (const y of legacyRepo.years()) years.add(y);
+    return [...years].filter((y) => Number.isInteger(y) && y >= 1970).sort((a, b) => a - b);
   }
 
   function today() {
@@ -122,6 +158,21 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
     ];
   }
 
+  /**
+   * The tags whose hours the Agenda shows next to TTP (Settings → Agenda →
+   * Tags in the Agenda), in tag-name order. Until a list is chosen, the
+   * earlier single choice (or the tag named "English") is used.
+   */
+  function hoursTags() {
+    const s = settingsRepo.getAll();
+    if (Array.isArray(s.hoursTagIds)) {
+      const chosen = new Set(s.hoursTagIds);
+      return tagsRepo.list().filter((t) => chosen.has(t.id)).map((t) => ({ id: t.id, name: t.name, color: t.color }));
+    }
+    const t = hoursTag();
+    return t ? [{ id: t.id, name: t.name, color: t.color }] : [];
+  }
+
   /** The tag whose time is shown as H.E. in the Agenda. */
   function hoursTag() {
     const id = settingsRepo.getAll().hoursTagId;
@@ -130,6 +181,65 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
       if (t) return t;
     }
     return tagsRepo.findByName('English');
+  }
+
+  // ------------------------------------------------------------ legacy data
+
+  const weekStartSetting = () => settingsRepo.getAll().weekStart;
+
+  /**
+   * Legacy (hand-entered weekly) records that fall in [fromMs, toMs): a week
+   * counts in a range when its anchor day does (see core/dates.js), using the
+   * current "Weeks start on" setting. Missing bounds mean open-ended.
+   */
+  function legacyIn(fromMs, toMs) {
+    const ws = weekStartSetting();
+    const lo = Number.isFinite(fromMs) ? fromMs : -Infinity;
+    const hi = Number.isFinite(toMs) ? toMs : Infinity;
+    return db.all('SELECT id, year, week, kind, tag_id, value FROM legacy_records').filter((r) => {
+      const a = startOfLocalDate(weekRange(r.year, r.week, ws).anchor);
+      return a >= lo && a < hi;
+    });
+  }
+
+  /** Totals of legacy records in a range: Pomodoros, and seconds per tag id. */
+  function legacyTotals(fromMs, toMs) {
+    const out = { pomodoros: 0, seconds: 0, byTag: new Map(), rows: [] };
+    for (const r of legacyIn(fromMs, toMs)) {
+      out.rows.push(r);
+      if (r.kind === 'pomodoros') out.pomodoros += r.value;
+      else if (r.tag_id) {
+        out.seconds += r.value;
+        out.byTag.set(r.tag_id, (out.byTag.get(r.tag_id) || 0) + r.value);
+      }
+    }
+    return out;
+  }
+
+  /** Legacy records (optionally one year) with their dates under the current week setting. */
+  function legacyList(year) {
+    const ws = weekStartSetting();
+    return legacyRepo.list({ year }).map((r) => {
+      const range = weekRange(r.year, r.week, ws);
+      return { ...r, from: range.from, to: range.to, inYear: r.week <= weeksInYear(r.year, ws) };
+    });
+  }
+
+  /** The weeks of a year (per "Weeks start on") for the Legacy Data picker, plus today's week. */
+  function legacyWeeks(year) {
+    const ws = weekStartSetting();
+    const y = Number(year);
+    if (!Number.isInteger(y) || y < 1970 || y > 2200) throw new Error('Year must be between 1970 and 2200.');
+    const weeks = [];
+    for (let w = 1; w <= weeksInYear(y, ws); w += 1) {
+      const r = weekRange(y, w, ws);
+      weeks.push({ week: w, from: r.from, to: r.to });
+    }
+    return { year: y, weekStart: ws, weeks, current: weekOfDate(localDate(clock()), ws) };
+  }
+
+  function saveLegacy(input) {
+    return legacyRepo.save(input, weekStartSetting());
   }
 
   /** Per-tag totals for completed focus sessions that ended in [from, to). */
@@ -154,7 +264,23 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
           AND NOT EXISTS (SELECT 1 FROM session_tags st WHERE st.session_id = s.id AND st.tag_id IS NOT NULL)`, [a, b],
     );
     const first = db.get("SELECT MIN(ended_at) AS first FROM sessions WHERE session_type = 'focus' AND completed = 1").first;
-    return { tags: rows.map((r) => ({ ...r, sessions: r.sessions || 0 })), total, untagged, firstSessionAt: first };
+    // Legacy records add on top: hours to their tag, weekly TTP to the total.
+    const legacy = legacyTotals(from, to);
+    const tags = rows.map((r) => {
+      const legacySeconds = legacy.byTag.get(r.id) || 0;
+      return { ...r, sessions: r.sessions || 0, seconds: r.seconds + legacySeconds, legacySeconds };
+    }).sort((x, y) => y.seconds - x.seconds || x.name.localeCompare(y.name, undefined, { sensitivity: 'base' }));
+    return {
+      tags,
+      total: {
+        sessions: total.sessions + legacy.pomodoros,
+        seconds: total.seconds + legacy.seconds,
+        legacyPomodoros: legacy.pomodoros,
+        legacySeconds: legacy.seconds,
+      },
+      untagged,
+      firstSessionAt: first,
+    };
   }
 
   /** One tag in detail: totals, per-task breakdown and per-month series. */
@@ -182,25 +308,39 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
       const m = byMonth.get(key) || { month: key, sessions: 0, seconds: 0 };
       m.sessions += 1; m.seconds += r.seconds; byMonth.set(key, m);
     }
+    // Legacy hours for this tag: added to the total, the months (by week anchor) and a "Legacy records" line.
+    const ws = weekStartSetting();
+    let legacySeconds = 0;
+    for (const r of legacyIn(from, to)) {
+      if (r.kind !== 'tag_hours' || r.tag_id !== tag.id) continue;
+      legacySeconds += r.value;
+      const key = weekRange(r.year, r.week, ws).anchor.slice(0, 7);
+      const m = byMonth.get(key) || { month: key, sessions: 0, seconds: 0 };
+      m.seconds += r.value; m.legacySeconds = (m.legacySeconds || 0) + r.value; byMonth.set(key, m);
+    }
+    seconds += legacySeconds;
+    if (legacySeconds) byTask.set('\u0000legacy', { task: 'Legacy records', legacy: true, sessions: 0, seconds: legacySeconds });
     return {
       tag,
       sessions: rows.length,
       seconds,
+      legacySeconds,
       firstAt: rows.length ? rows[0].ended_at : null,
       lastAt: rows.length ? rows[rows.length - 1].ended_at : null,
       byTask: [...byTask.values()].sort((x, y) => y.seconds - x.seconds),
-      byMonth: [...byMonth.values()],
+      byMonth: [...byMonth.values()].sort((x, y) => x.month.localeCompare(y.month)),
     };
   }
 
-  /** Seconds of completed focus with a tag between two timestamps (for goals). */
+  /** Seconds of completed focus with a tag between two timestamps, plus legacy hours on that tag (for goals). */
   function tagSeconds(tagId, fromMs, toMs) {
     const [a, b] = isoRange(fromMs, toMs);
-    return db.get(
+    const tracked = db.get(
       `SELECT COALESCE(SUM(s.actual_duration_seconds), 0) AS seconds FROM session_tags st JOIN sessions s ON s.id = st.session_id
         WHERE st.tag_id = ? AND s.session_type = 'focus' AND s.completed = 1 AND s.ended_at >= ? AND s.ended_at < ?`,
       [tagId, a, b],
     ).seconds;
+    return tracked + (legacyTotals(fromMs, toMs).byTag.get(tagId) || 0);
   }
 
   // ------------------------------------------------------------ agenda
@@ -216,23 +356,25 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
     const last = addDaysToDate(first, n - 1);
     const fromMs = startOfLocalDate(first);
     const toMs = startOfLocalDate(addDaysToDate(last, 1));
-    const tag = hoursTag();
+    const tags = hoursTags();                 // tags shown next to TTP (Settings)
+    const tagIds = new Set(tags.map((t) => t.id));
 
     const tasks = decorateTasks(tasksRepo.scheduledBetween(first, last));
     const notes = new Map(notesRepo.between(first, last).map((x) => [x.note_date, x]));
     const sessions = db.all(
       `SELECT s.id, s.ended_at, s.actual_duration_seconds AS seconds,
-              EXISTS (SELECT 1 FROM session_tags st WHERE st.session_id = s.id AND st.tag_id = ?) AS is_hours
+              (SELECT group_concat(st.tag_id) FROM session_tags st WHERE st.session_id = s.id AND st.tag_id IS NOT NULL) AS tag_ids
          FROM sessions s
         WHERE s.session_type = 'focus' AND s.completed = 1 AND s.ended_at >= ? AND s.ended_at < ?`,
-      [tag ? tag.id : -1, iso(fromMs), iso(toMs)],
+      [iso(fromMs), iso(toMs)],
     );
 
+    const zero = () => Object.fromEntries(tags.map((t) => [t.id, 0]));
     const days = [];
     const index = new Map();
     for (let i = 0; i < n; i += 1) {
       const date = addDaysToDate(first, i);
-      const day = { date, tasks: [], note: notes.get(date) || null, ttp: 0, hoursSeconds: 0, focusSeconds: 0 };
+      const day = { date, tasks: [], note: notes.get(date) || null, ttp: 0, hoursSeconds: 0, focusSeconds: 0, tagSeconds: zero() };
       index.set(date, day);
       days.push(day);
     }
@@ -242,13 +384,34 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
       if (!day) continue;
       day.ttp += 1;
       day.focusSeconds += s.seconds;
-      if (s.is_hours) day.hoursSeconds += s.seconds;
+      for (const id of String(s.tag_ids || '').split(',').filter(Boolean).map(Number)) {
+        if (tagIds.has(id)) day.tagSeconds[id] += s.seconds;
+      }
     }
+    const firstTag = tags[0] || null;
+    for (const d of days) d.hoursSeconds = firstTag ? d.tagSeconds[firstTag.id] : 0;
+
     const week = days.reduce((acc, d) => ({
-      ttp: acc.ttp + d.ttp, hoursSeconds: acc.hoursSeconds + d.hoursSeconds, focusSeconds: acc.focusSeconds + d.focusSeconds,
+      ttp: acc.ttp + d.ttp, focusSeconds: acc.focusSeconds + d.focusSeconds,
       tasks: acc.tasks + d.tasks.length, tasksDone: acc.tasksDone + d.tasks.filter((t) => t.status === 'completed').length,
-    }), { ttp: 0, hoursSeconds: 0, focusSeconds: 0, tasks: 0, tasksDone: 0 });
-    return { from: first, to: last, days, week, hoursTag: tag ? { id: tag.id, name: tag.name } : null };
+    }), { ttp: 0, focusSeconds: 0, tasks: 0, tasksDone: 0 });
+    // Legacy weeks inside this run of days (the week box): added to the
+    // totals only; day rows show tracked data.
+    const legacy = legacyTotals(fromMs, toMs);
+    week.ttp += legacy.pomodoros;
+    week.tags = tags.map((t) => {
+      const legacySeconds = legacy.byTag.get(t.id) || 0;
+      return { ...t, seconds: days.reduce((sum, d) => sum + d.tagSeconds[t.id], 0) + legacySeconds, legacySeconds };
+    });
+    week.hoursSeconds = firstTag ? week.tags[0].seconds : 0;
+    const legacyTagSeconds = week.tags.reduce((sum, t) => sum + t.legacySeconds, 0);
+    week.legacy = {
+      pomodoros: legacy.pomodoros,
+      hoursSeconds: firstTag ? week.tags[0].legacySeconds : 0,
+      tagSeconds: legacyTagSeconds,
+      records: legacy.rows.length,
+    };
+    return { from: first, to: last, days, week, tags, hoursTag: firstTag };
   }
 
   /** The note written on 1 January of each year (one note per day), keyed by year. */
@@ -266,6 +429,7 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
     for (const r of db.all('SELECT DISTINCT substr(scheduled_date, 1, 4) AS y FROM tasks WHERE scheduled_date IS NOT NULL')) years.add(Number(r.y));
     for (const r of db.all('SELECT DISTINCT substr(note_date, 1, 4) AS y FROM daily_notes')) years.add(Number(r.y));
     for (const y of goalsRepo.years()) years.add(y);
+    for (const y of legacyRepo.years()) years.add(y);
     // Session years in local time. Only sessions near New Year can differ
     // between UTC and local time, so only those are converted one by one.
     for (const r of db.all("SELECT DISTINCT substr(ended_at, 1, 4) AS y FROM sessions WHERE substr(ended_at, 6, 5) NOT IN ('01-01', '12-31')")) years.add(Number(r.y));
@@ -372,6 +536,7 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
       db.run('DELETE FROM tasks');
       db.run('DELETE FROM goal_milestones');
       db.run('DELETE FROM goals');
+      db.run('DELETE FROM legacy_records');
       db.run('DELETE FROM tags');
       db.run('DELETE FROM daily_notes');
       db.run('DELETE FROM app_state');
@@ -383,9 +548,10 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
   }
 
   return {
-    db, settingsRepo, tasksRepo, sessionsRepo, stateRepo, stepsRepo, tagsRepo, notesRepo, goalsRepo, engine,
+    db, settingsRepo, tasksRepo, sessionsRepo, stateRepo, stepsRepo, tagsRepo, notesRepo, goalsRepo, legacyRepo, engine,
+    legacyList, legacyWeeks, saveLegacy, legacyTotals, productivityYears, firstRecordAt,
     report, today, exportCsv, clearAllData, listTasks, decorateTasks, prepareImport, applyImport,
-    activityStats, activityDetail, tagSeconds, hoursTag, agendaDays, agendaYears, yearOpeningNotes, listGoals, goalYears,
+    activityStats, activityDetail, tagSeconds, hoursTag, hoursTags, agendaDays, agendaYears, yearOpeningNotes, listGoals, goalYears,
   };
 }
 

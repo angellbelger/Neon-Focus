@@ -3,19 +3,22 @@
 // ("Weeks start on": Monday → Monday–Sunday, Sunday → Sunday–Saturday). It
 // opens on the week holding today, which carries the neon accent; each day lists the tasks dated for it (the same task rows
 // as the Tasks section), a free-text note, and a box on the far right with
-// TTP (Total Pomodoro) and H.E. (Hours English) calculated from sessions.
+// TTP (Total Pomodoro) and the hours of each tag chosen in Settings → Agenda
+// (shown by the tag's own name), calculated from sessions. The week and
+// "so far" boxes also add legacy records.
 
 import { api, store } from './store.js';
 import { $, h, icon, ICONS, toast, toastError, confirmAction } from './ui.js';
 import { isoDate, dateKeyToMs, hoursMinutes, dayOfYear, plural } from './format.js';
 import { registerPage, currentPage } from './navigation.js';
-import { tagChips, loadTags } from './tags.js';
+import { tagChips } from './tags.js';
 import { openEditor } from './tasks.js';
 
 const LOCALE = 'en-GB';
 
 const state = {
   weekStart: null,     // 'YYYY-MM-DD' of the first day shown (the page covers it and the next six days)
+  hoursTagKey: null,   // Settings → "Tags in the Agenda" the page was built with
   weekStartDay: null,  // Settings "Weeks start on" the page was built with (0 = Sunday, 1 = Monday)
   followToday: true,   // page shows the current week (moves on when a new week starts)
   scrollToToday: false, // bring today's row into view after the next render
@@ -76,6 +79,31 @@ function weekNumber(first) {
     (so the week holding 31 December stays in that year's planner). */
 function pageYear() {
   return new Date(dateKeyToMs(state.weekStart)).getFullYear();
+}
+
+/** Identifies the tag choice in Settings, to notice when it changes. */
+function tagChoiceKey() {
+  const st = store.settings || {};
+  return JSON.stringify([st.hoursTagIds ?? null, st.hoursTagId ?? null]);
+}
+
+/** "Legacy · incl. 12P · English 3 h" line under a box (hidden when nothing comes from legacy records). */
+function legacyLine(el, pomodoros, tags) {
+  const parts = [];
+  if (pomodoros) parts.push(`${pomodoros}P`);
+  for (const t of tags) if (t.legacySeconds) parts.push(`${t.name} ${hoursMinutes(t.legacySeconds)}`);
+  el.hidden = parts.length === 0;
+  el.replaceChildren(h('span.legacy-mark', { title: 'Weekly totals entered in Settings → Legacy data' }, 'Legacy'), ` incl. ${parts.join(' · ')}`);
+}
+
+/** TTP plus one line per tag chosen in Settings (the tag's own name, never a fixed label). */
+function tallyRows(ttp, tags) {
+  return [
+    h('div.tally__row--ttp', {}, h('dt', { title: 'Total Pomodoro' }, 'TTP'), h('dd', {}, `${ttp}P`)),
+    ...tags.map((t) => h('div.tally__row--tag', { dataset: { tagId: String(t.id) } },
+      h('dt', { title: `Hours of ${t.name}` }, h(`span.tally__dot.tag--${t.color || 'gray'}`, { 'aria-hidden': 'true' }), h('span.tally__name', {}, t.name)),
+      h('dd', {}, hoursMinutes(t.seconds)))),
+  ];
 }
 
 function rangeLabel(from, to) {
@@ -162,7 +190,7 @@ function addControls(day) {
         h('span', { 'aria-hidden': 'true' }, '+'), 'Note'));
 }
 
-function dayRow(day, hoursLabel) {
+function dayRow(day, tags) {
   const ms = dateKeyToMs(day.date);
   const d = new Date(ms);
   const today = day.date === isoDate(Date.now());
@@ -185,7 +213,10 @@ function dayRow(day, hoursLabel) {
       addControls(day)),
     h('dl.ag-day__stats', { 'aria-label': `Productivity on ${full}` },
       h('div', {}, h('dt', { title: 'Total Pomodoro' }, 'TTP'), h('dd', {}, String(day.ttp))),
-      h('div', {}, h('dt', { title: `Hours ${hoursLabel}` }, 'H.E.'), h('dd', {}, hoursMinutes(day.hoursSeconds)))));
+      // Only the selected tags that have time that day, so a day never fills up with "0 min" lines.
+      tags.filter((t) => day.tagSeconds?.[t.id] > 0).map((t) => h('div', { dataset: { tagId: String(t.id) } },
+        h('dt', { title: `Hours of ${t.name}` }, t.name),
+        h('dd', {}, hoursMinutes(day.tagSeconds?.[t.id] || 0))))));
 }
 
 function renderYears() {
@@ -284,33 +315,29 @@ function renderCalendar() {
 
 async function renderSide() {
   const r = state.data;
-  const label = r.hoursTag ? r.hoursTag.name : 'English';
   $('#ag-week-title').textContent = showsToday() ? `This week · W${weekNumber(state.weekStart)}` : `Week ${weekNumber(state.weekStart)}`;
-  $('#ag-week-ttp').textContent = `${r.week.ttp}P`;
-  $('#ag-week-he').textContent = hoursMinutes(r.week.hoursSeconds);
-  $('#ag-week-he-label').title = `Hours ${label}`;
+  const weekTags = r.week.tags || [];
+  $('#ag-week-tally').replaceChildren(...tallyRows(r.week.ttp, weekTags));
+  legacyLine($('#ag-week-legacy'), (r.week.legacy || {}).pomodoros, weekTags);
   $('#ag-week-meta').textContent = r.week.tasks ? `${r.week.tasksDone} of ${plural(r.week.tasks, 'task')} done` : 'No tasks this week';
   renderYears();
   renderCalendar();
 
-  // Year totals come from the same session records as Activity Statistics.
+  // "So far": the selected planner's year (1 January to 31 December) —
+  // sessions plus that year's legacy weeks — from the same totals as
+  // Activity Statistics. Other years have their own planner.
   const y = pageYear();
   const nowYear = new Date().getFullYear();
   $('#ag-year-title').textContent = y === nowYear ? `${y} so far` : `${y} in total`;
   try {
+    const ticket = state.loading;
     const stats = await api.activity.stats({ from: new Date(y, 0, 1).getTime(), to: new Date(y + 1, 0, 1).getTime() });
-    $('#ag-year-ttp').textContent = `${stats.total.sessions}P`;
-    const tag = r.hoursTag ? stats.tags.find((t) => t.id === r.hoursTag.id) : null;
-    $('#ag-year-he').textContent = hoursMinutes(tag ? tag.seconds : 0);
+    if (ticket !== state.loading) return;
+    const byId = new Map(stats.tags.map((t) => [t.id, t]));
+    const tags = (r.tags || []).map((t) => ({ ...t, seconds: byId.get(t.id)?.seconds || 0, legacySeconds: byId.get(t.id)?.legacySeconds || 0 }));
+    $('#ag-year-tally').replaceChildren(...tallyRows(stats.total.sessions, tags));
+    legacyLine($('#ag-year-legacy'), stats.total.legacyPomodoros, tags);
   } catch (_) { /* side box only */ }
-
-  // H.E. tag choice
-  const sel = $('#ag-hours-tag');
-  const tags = await loadTags();
-  const chosen = store.settings ? store.settings.hoursTagId : null;
-  sel.replaceChildren(h('option', { value: '' }, 'The tag named "English"'),
-    ...tags.map((t) => h('option', { value: String(t.id) }, t.name)));
-  sel.value = chosen && tags.some((t) => t.id === chosen) ? String(chosen) : '';
 }
 
 function render(focusKey = null) {
@@ -321,9 +348,8 @@ function render(focusKey = null) {
   const key = focusKey || (active && list.contains(active) ? active.dataset.focusKey : null);
   const caret = active && list.contains(active) && 'selectionStart' in active ? active.selectionStart : null;
 
-  const label = r.hoursTag ? r.hoursTag.name : 'English';
   // The seven days in calendar order from the configured first day, like a printed weekly agenda.
-  list.replaceChildren(...r.days.map((d) => dayRow(d, label)));
+  list.replaceChildren(...r.days.map((d) => dayRow(d, r.tags || [])));
   $('#ag-range').textContent = rangeLabel(r.from, r.to);
 
   if (state.scrollToToday && !key) {
@@ -441,6 +467,7 @@ export function initAgenda() {
   state.weekStartDay = firstDayOfWeek();
   state.weekStart = weekOf(todayKey());
   state.scrollToToday = true;
+  state.hoursTagKey = tagChoiceKey();
   state.calMonth = Date.now();
 
   $('#ag-prev').addEventListener('click', () => goTo(addDays(state.weekStart, -7)));
@@ -451,13 +478,6 @@ export function initAgenda() {
   });
   $('#ag-cal-next').addEventListener('click', () => {
     const d = new Date(state.calMonth); d.setDate(1); d.setMonth(d.getMonth() + 1); state.calMonth = d.getTime(); renderCalendar();
-  });
-  $('#ag-hours-tag').addEventListener('change', async (e) => {
-    try {
-      await api.settings.update({ hoursTagId: e.target.value ? Number(e.target.value) : null });
-      toast('H.E. now counts the selected tag.');
-      load();
-    } catch (err) { toastError(err); }
   });
 
   registerPage('agenda', {
@@ -480,6 +500,12 @@ export function initAgenda() {
       state.addingFor = null;
       state.editingNote = null;
       if (state.data) load();   // reloads the days, the week box (TTP / H.E.) and the calendar
+      return;
+    }
+    // Tags chosen in Settings: both boxes and the day rows switch at once.
+    if (state.data && tagChoiceKey() !== state.hoursTagKey) {
+      state.hoursTagKey = tagChoiceKey();
+      load();
       return;
     }
     if (state.data && currentPage() === 'agenda') renderCalendar();

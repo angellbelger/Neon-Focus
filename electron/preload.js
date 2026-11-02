@@ -55,6 +55,13 @@ contextBridge.exposeInMainWorld('pomodoro', {
     update: (id, tag) => call('tags:update', id, tag),
     remove: (id) => call('tags:delete', id),
   },
+  legacy: {
+    list: (year) => call('legacy:list', year),
+    weeks: (year) => call('legacy:weeks', year),
+    find: (q) => call('legacy:find', q),
+    save: (record) => call('legacy:save', record),
+    remove: (id) => call('legacy:delete', id),
+  },
   agenda: {
     days: (startDate, count) => call('agenda:days', startDate, count),
     years: () => call('agenda:years'),

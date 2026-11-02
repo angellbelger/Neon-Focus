@@ -162,19 +162,19 @@
 
             <section class="weekbox" aria-labelledby="ag-week-title">
               <p class="side-title" id="ag-week-title">This week</p>
-              <dl class="tally">
-                <div><dt title="Total Pomodoro">TTP</dt><dd id="ag-week-ttp">0</dd></div>
-                <div><dt id="ag-week-he-label" title="Hours English">H.E.</dt><dd id="ag-week-he">0 min</dd></div>
+              <dl class="tally" id="ag-week-tally" aria-label="This week: TTP and hours per tag">
+                <div class="tally__row--ttp"><dt title="Total Pomodoro">TTP</dt><dd>0P</dd></div>
               </dl>
+              <p class="weekbox__legacy" id="ag-week-legacy" hidden></p>
               <p class="weekbox__meta" id="ag-week-meta"></p>
             </section>
 
             <section class="weekbox weekbox--year" aria-labelledby="ag-year-title">
-              <p class="side-title" id="ag-year-title">2026 so far</p>
-              <dl class="tally">
-                <div><dt title="Total Pomodoro">TTP</dt><dd id="ag-year-ttp">0</dd></div>
-                <div><dt title="Hours English">H.E.</dt><dd id="ag-year-he">0 min</dd></div>
+              <p class="side-title" id="ag-year-title" title="The selected planner's year: sessions and legacy data">2026 so far</p>
+              <dl class="tally" id="ag-year-tally" aria-label="This planner year: TTP and hours per tag">
+                <div class="tally__row--ttp"><dt title="Total Pomodoro">TTP</dt><dd>0P</dd></div>
               </dl>
+              <p class="weekbox__legacy" id="ag-year-legacy" hidden></p>
             </section>
 
             <section class="minical" aria-labelledby="ag-cal-title">
@@ -186,9 +186,6 @@
               <div class="minical__grid" id="ag-cal" role="grid" aria-labelledby="ag-cal-title"></div>
             </section>
 
-            <label class="side-setting">H.E. counts the tag
-              <select id="ag-hours-tag"></select>
-            </label>
           </aside>
         </div>
       </section>
@@ -232,6 +229,7 @@
             <span class="period-nav__label" id="dash-range" aria-live="polite">Today</span>
             <button class="icon-btn" id="dash-next" aria-label="Next period"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button class="btn btn--small btn--ghost" id="dash-today">Current</button>
+            <label class="dash-year"><span class="visually-hidden">Year</span><select id="dash-year" title="Jump to a year with records"></select></label>
           </div>
         </header>
 
@@ -243,6 +241,7 @@
 
         <div class="dash-body" id="dash-body">
           <div class="kpis" id="dash-kpis"></div>
+          <p class="dash-legacy" id="dash-legacy" hidden></p>
           <div class="charts">
             <figure class="panel chart-panel chart-panel--wide">
               <figcaption><span class="chart-title">Focus time</span><span class="chart-sub" id="chart-focus-sub"></span></figcaption>
@@ -429,6 +428,16 @@
           </fieldset>
 
           <fieldset class="panel settings__group">
+            <legend>Agenda</legend>
+            <div class="field field--tags"><span class="field__label" id="s-agenda-tags-label">Tags in the Agenda</span>
+              <div class="tag-toggles" id="s-agenda-tags" role="group" aria-labelledby="s-agenda-tags-label"></div>
+            </div>
+            <p class="field__hint">Each selected tag gets its own line of hours, by name, next to TTP in the Agenda: this week, so far and on every day. Select none to show only TTP. This only changes what is shown; no record is altered.</p>
+            <div class="field"><span class="field__label">Legacy data</span><button class="btn btn--small btn--ghost" type="button" id="s-legacy">Manage legacy data</button></div>
+            <p class="field__hint">Weekly totals from paper planners kept before Focus Neon (Pomodoros and hours per tag). They are added to the Agenda boxes, Activity Statistics and tag goals.</p>
+          </fieldset>
+
+          <fieldset class="panel settings__group">
             <legend>Appearance</legend>
             <div class="field"><span class="field__label" id="theme-label">Accent</span>
               <div class="swatches" role="radiogroup" aria-labelledby="theme-label">
@@ -533,6 +542,36 @@
         <button class="btn btn--small btn--accent" type="button" id="tag-manager-create">Create tag</button>
       </div>
       <p class="form-error" id="tag-manager-error" role="alert" hidden></p>
+      <div class="dialog__actions">
+        <button class="btn btn--ghost" value="close">Done</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Legacy data: weekly totals from paper planners -->
+  <dialog class="dialog dialog--wide dialog--legacy" id="legacy-manager" aria-labelledby="legacy-title">
+    <form method="dialog" class="dialog__inner" id="legacy-form" novalidate>
+      <h2 id="legacy-title">Legacy data</h2>
+      <p class="dialog__sub">Weekly totals from your paper planners, from before Focus Neon. They are added to the Agenda's week and year boxes, Activity Statistics and tag goals. Your recorded sessions, tasks and notes are never changed. <span id="lg-weekstart"></span></p>
+      <fieldset class="legacy-entry" aria-labelledby="lg-entry-title">
+        <legend class="legacy-entry__title" id="lg-entry-title">Add a record</legend>
+        <label class="stack">Year<input id="lg-year" type="number" min="1970" max="2200" required></label>
+        <label class="stack legacy-entry__week">Week<select id="lg-week"></select></label>
+        <label class="stack">Record
+          <select id="lg-kind"><option value="pomodoros">Pomodoros (TTP)</option><option value="tag_hours">Hours on a tag</option></select>
+        </label>
+        <label class="stack" id="lg-tag-wrap" hidden>Tag<select id="lg-tag"></select></label>
+        <label class="stack"><span id="lg-value-label">Pomodoros</span><input id="lg-value" type="number" min="1" step="1" inputmode="decimal" required></label>
+      </fieldset>
+      <div class="legacy-entry__actions">
+        <button class="btn btn--small btn--accent" type="button" id="lg-save">Add record</button>
+        <button class="btn btn--small btn--ghost" type="button" id="lg-cancel" hidden>Cancel editing</button>
+        <span class="legacy-entry__hint" id="lg-hint" aria-live="polite"></span>
+      </div>
+      <div class="form-error legacy-entry__error" id="lg-error" role="alert" hidden><span id="lg-error-text"></span> <button class="btn btn--small btn--ghost" type="button" id="lg-edit-existing" hidden>Edit that record</button></div>
+      <h3 class="legacy-list__title"><span class="legacy-mark">Legacy</span> Records in <span id="lg-list-year"></span></h3>
+      <ul class="legacy-list" id="lg-list"></ul>
+      <p class="legacy-list__empty" id="lg-empty" hidden>No legacy records for this year yet.</p>
       <div class="dialog__actions">
         <button class="btn btn--ghost" value="close">Done</button>
       </div>

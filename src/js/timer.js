@@ -273,6 +273,15 @@ export function initTimer() {
   store.on('settings', (st) => $('#dial-ticks').classList.toggle('is-glowing', st.glowIntensity > 0));
   onPageChange(() => store.timer && renderState(store.timer));
 
-  // Keep the countdown correct after the window was hidden.
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) frame(); });
+  // Keep the countdown correct after the window was hidden, the screen was
+  // locked or off, or the computer slept: redraw from the timestamps at once,
+  // then pull a fresh snapshot from the main process (which also completes a
+  // session that reached zero meanwhile).
+  const resync = () => {
+    if (document.hidden) return;
+    frame();
+    api.timer.getState().then((s) => store.setTimer(s)).catch(() => {});
+  };
+  document.addEventListener('visibilitychange', resync);
+  window.addEventListener('focus', resync);
 }

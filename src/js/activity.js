@@ -38,8 +38,13 @@ function rangeBounds() {
   }
 }
 
+/** Small "Legacy" marker for figures that include hand-entered weekly totals. */
+function legacyMark(text) {
+  return h('span.legacy-mark.legacy-mark--inline', { title: text }, 'Legacy');
+}
+
 function shareBar(seconds, total) {
-  const pct = total ? Math.round((seconds / total) * 100) : 0;
+  const pct = total ? Math.min(100, Math.round((seconds / total) * 100)) : 0;
   return h('span.share', { title: `${pct}% of all focused time in this range` }, h('span', { style: `width:${pct}%` }));
 }
 
@@ -57,6 +62,7 @@ async function renderDetail() {
       h('dl.act-figures', {},
         h('div', {}, h('dt', {}, 'Total Pomodoro sessions'), h('dd', {}, String(d.sessions))),
         h('div', {}, h('dt', {}, 'Total focused time'), h('dd', {}, hoursMinutes(d.seconds)))),
+      d.legacySeconds ? h('p.act-detail__legacy', {}, legacyMark('Weekly hours entered in Settings → Legacy data'), ` Includes ${hoursMinutes(d.legacySeconds)} from legacy records`) : null,
       d.sessions
         ? h('p.act-detail__span', {}, `From ${new Date(Date.parse(d.firstAt)).toLocaleDateString(LOCALE, { day: 'numeric', month: 'short', year: 'numeric' })} to ${new Date(Date.parse(d.lastAt)).toLocaleDateString(LOCALE, { day: 'numeric', month: 'short', year: 'numeric' })}`)
         : h('p.act-detail__span', {}, 'No completed Pomodoros with this tag in this range.'),
@@ -67,13 +73,13 @@ async function renderDetail() {
           return h('li', {},
             h('span', {}, new Date(yy, mm - 1, 1).toLocaleDateString(LOCALE, { month: 'short', year: 'numeric' })),
             h('span.share', {}, h('span', { style: `width:${(m.seconds / maxMonth) * 100}%` })),
-            h('span.num', {}, hoursMinutes(m.seconds)));
+            h('span.num', {}, m.legacySeconds ? legacyMark(`Includes ${hoursMinutes(m.legacySeconds)} from legacy records`) : null, hoursMinutes(m.seconds)));
         }))) : null,
       d.byTask.length ? h('section.act-tasks', {},
         h('h4', {}, 'By task'),
         h('ul', {}, d.byTask.slice(0, 12).map((t) => h('li', {},
-          h('span.act-tasks__name', {}, t.task),
-          h('span.num', {}, `${t.sessions}P`),
+          h('span.act-tasks__name', {}, t.legacy ? [legacyMark('Weekly hours entered in Settings → Legacy data'), ' Legacy records'] : t.task),
+          h('span.num', {}, t.legacy ? '–' : `${t.sessions}P`),
           h('span.num', {}, hoursMinutes(t.seconds)))))) : null,
     ].filter(Boolean));
   } catch (err) { toastError(err); }
@@ -99,11 +105,13 @@ async function load() {
     },
     h('th', { scope: 'row' }, h(`span.tag.tag--${t.color}`, {}, t.name)),
     h('td.num', {}, String(t.sessions)),
-    h('td.num', {}, hoursMinutes(t.seconds)),
+    h('td.num', {}, t.legacySeconds ? legacyMark(`Includes ${hoursMinutes(t.legacySeconds)} from legacy records`) : null, hoursMinutes(t.seconds)),
     h('td', {}, shareBar(t.seconds, total)))));
     $('#act-foot').replaceChildren(
       h('tr.muted', {}, h('th', { scope: 'row' }, 'No tag'), h('td.num', {}, String(s.untagged.sessions)), h('td.num', {}, hoursMinutes(s.untagged.seconds)), h('td', {}, shareBar(s.untagged.seconds, total))),
-      h('tr', {}, h('th', { scope: 'row' }, 'All focus'), h('td.num', {}, String(s.total.sessions)), h('td.num', {}, hoursMinutes(total)), h('td')),
+      h('tr', {}, h('th', { scope: 'row' }, 'All focus'),
+        h('td.num', {}, s.total.legacyPomodoros ? legacyMark(`Includes ${s.total.legacyPomodoros} Pomodoros from legacy records`) : null, String(s.total.sessions)),
+        h('td.num', {}, s.total.legacySeconds ? legacyMark(`Includes ${hoursMinutes(s.total.legacySeconds)} from legacy records`) : null, hoursMinutes(total)), h('td')),
     );
     $('#act-empty').hidden = s.tags.length > 0;
     $('.act-table').hidden = s.tags.length === 0;

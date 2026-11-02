@@ -1,4 +1,8 @@
 .period-nav { display: flex; align-items: center; gap: 8px; }
+.dash-year select { height: 32px; font-size: var(--fs-sm); padding: 0 28px 0 10px; }
+/* legacy (weekly totals from paper planners) included in this report */
+.dash-legacy { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -6px 0 14px; color: var(--text-3); font-size: var(--fs-xs); }
+.kpi__label .legacy-mark { margin-left: 6px; vertical-align: 1px; }
 .period-nav__label { min-width: 13ch; text-align: center; font-variant-numeric: tabular-nums; color: var(--text-2); }
 
 /* KPI row: an open strip of figures separated by hairlines, not boxed cards */
@@ -102,6 +106,7 @@
 .act-figures dd { margin: 2px 0 0; font-size: var(--fs-2xl); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 .act-figures div:first-child dd { color: var(--focus); }
 .act-detail__span { margin-top: 8px; color: var(--text-3); font-size: var(--fs-xs); }
+.act-detail__legacy { margin-top: 8px; display: flex; align-items: center; gap: 4px; color: var(--text-3); font-size: var(--fs-xs); }
 .act-months, .act-tasks { margin-top: 18px; }
 .act-months h4, .act-tasks h4 { font-size: var(--fs-xs); color: var(--text-3); font-weight: 500; margin: 0 0 6px; }
 .act-months ul, .act-tasks ul { list-style: none; margin: 0; padding: 0; }

@@ -1,5 +1,6 @@
 // Dashboard: day / week / month / year statistics computed in the main
-// process from stored sessions.
+// process from stored sessions plus legacy data (weekly totals from paper
+// planners, counted in week, month and year reports).
 
 import { api, store } from './store.js';
 import { $, h, radioGroup, toastError } from './ui.js';
@@ -46,9 +47,9 @@ function deltaText(cur, prev, r, kind) {
   return { text: `${up ? '+' : '−'}${amount}${pct} vs ${compareName(r)}`, trend: up ? 'up' : 'down' };
 }
 
-function kpi(label, value, { unit, delta, tone } = {}) {
+function kpi(label, value, { unit, delta, tone, legacy } = {}) {
   return h(`div.kpi${tone ? `.kpi--${tone}` : ''}`, {},
-    h('span.kpi__label', {}, label),
+    h('span.kpi__label', {}, label, legacy ? h('span.legacy-mark', { title: legacy }, 'Legacy') : null),
     h('span.kpi__value', {}, value, unit ? h('small', {}, unit) : null),
     delta ? h('span.kpi__delta', { 'data-trend': delta.trend || null }, delta.text) : null);
 }
@@ -65,8 +66,16 @@ function renderKpis(r) {
   const s = r.summary;
   const focus = durationParts(s.focusSeconds);
   const items = [
-    kpi('Pomodoros', String(s.pomodoros), { tone: 'primary', delta: deltaText(s.pomodoros, r.comparison.pomodoros, r, 'count') }),
-    kpi(r.period === 'day' ? 'Focus time' : 'Focused', focus.value, { unit: focus.unit, delta: deltaText(s.focusSeconds, r.comparison.focusSeconds, r, 'time') }),
+    kpi('Pomodoros', String(s.pomodoros), {
+      tone: 'primary',
+      delta: deltaText(s.pomodoros, r.comparison.pomodoros, r, 'count'),
+      legacy: s.legacyPomodoros ? `Includes ${plural(s.legacyPomodoros, 'Pomodoro')} from legacy records` : null,
+    }),
+    kpi(r.period === 'day' ? 'Focus time' : 'Focused', focus.value, {
+      unit: focus.unit,
+      delta: deltaText(s.focusSeconds, r.comparison.focusSeconds, r, 'time'),
+      legacy: s.legacySeconds ? `Includes ${duration(s.legacySeconds)} of tag hours from legacy records` : null,
+    }),
   ];
 
   if (r.period === 'day') {
@@ -121,7 +130,10 @@ function renderCharts(r) {
     series: [{ label: 'Focus time', data: focusSecs.map((v) => (v === null ? null : toUnit(v))), color: 'var(--focus)' }],
     options: {
       yTitle: unitLabel,
-      tooltipFormat: (ctx) => ` ${duration(focusSecs[ctx.dataIndex] ?? 0)} focused`,
+      tooltipFormat: (ctx) => {
+        const b = r.buckets[ctx.dataIndex];
+        return ` ${duration(focusSecs[ctx.dataIndex] ?? 0)} focused${b && b.legacySeconds ? ` (${duration(b.legacySeconds)} from legacy records)` : ''}`;
+      },
     },
   });
   $('#chart-focus-sub').textContent = `${duration(r.summary.focusSeconds)} in total`;
@@ -133,7 +145,10 @@ function renderCharts(r) {
     options: {
       yTitle: 'Pomodoros',
       integer: true,
-      tooltipFormat: (ctx) => ` ${plural(ctx.parsed.y, 'Pomodoro')}`,
+      tooltipFormat: (ctx) => {
+        const b = r.buckets[ctx.dataIndex];
+        return ` ${plural(ctx.parsed.y, 'Pomodoro')}${b && b.legacyPomodoros ? ` (${b.legacyPomodoros} from legacy records)` : ''}`;
+      },
     },
   });
   $('#chart-pomo-sub').textContent = plural(r.summary.pomodoros, 'Pomodoro');
@@ -174,6 +189,39 @@ function renderCharts(r) {
   $('#chart-compare-note').hidden = r.previous.hasData;
 }
 
+/** Year picker: every year with sessions or legacy data (newest first). */
+function renderYears(r) {
+  const sel = $('#dash-year');
+  const years = (r.years || []).slice().reverse();
+  const shown = new Date(r.range.start + (r.range.end - r.range.start) / 2).getFullYear();
+  if (!years.includes(shown)) years.push(shown);
+  years.sort((a, b) => b - a);
+  sel.replaceChildren(...years.map((y) => h('option', { value: String(y) }, String(y))));
+  sel.value = String(shown);
+}
+
+/** The same date (and so the same day, week or month) in another year. */
+function anchorInYear(year) {
+  const now = new Date();
+  if (year === now.getFullYear()) return now.getTime();
+  const a = new Date(state.anchor);
+  const day = Math.min(a.getDate(), new Date(year, a.getMonth() + 1, 0).getDate());
+  return new Date(year, a.getMonth(), day, 12).getTime();
+}
+
+/** Line under the cards when legacy data is part of this report (or why it is not, in a day). */
+function renderLegacyNote(r) {
+  const el = $('#dash-legacy');
+  const s = r.summary;
+  if (!s.legacyPomodoros && !s.legacySeconds) { el.hidden = true; return; }
+  const parts = [];
+  if (s.legacyPomodoros) parts.push(plural(s.legacyPomodoros, 'Pomodoro'));
+  if (s.legacySeconds) parts.push(`${duration(s.legacySeconds)} of tag hours`);
+  const where = r.unit === 'month' ? 'in the month of each week' : 'in the totals (they are weekly, so they are not split by day)';
+  el.replaceChildren(h('span.legacy-mark', {}, 'Legacy'), `Includes ${parts.join(' and ')} entered as weekly totals, shown ${where}.`);
+  el.hidden = false;
+}
+
 function render() {
   const r = state.report;
   if (!r) return;
@@ -181,8 +229,10 @@ function render() {
   $('#dash-range').title = r.period === 'day' ? dateLong(r.range.start) : '';
   $('#dash-next').disabled = r.isCurrent || r.isFuture;
   $('#dash-today').disabled = r.isCurrent;
-  const first = r.firstSessionAt ? Date.parse(r.firstSessionAt) : null;
+  // Earliest data = first session or first legacy week, whichever is older.
+  const first = r.firstRecordAt ? Date.parse(r.firstRecordAt) : (r.firstSessionAt ? Date.parse(r.firstSessionAt) : null);
   $('#dash-prev').disabled = !first || r.range.start <= first;
+  renderYears(r);
 
   const empty = !r.summary.hasData;
   $('#dash-empty').hidden = !empty;
@@ -193,11 +243,14 @@ function render() {
       ? (r.period === 'day' ? 'No sessions yet today' : `No sessions yet this ${unit}`)
       : `No sessions in this ${unit}`;
     $('#dash-empty-text').textContent = first
-      ? 'Statistics appear here as soon as you finish or stop a session. Use the arrows to look at other periods.'
-      : 'Your statistics are built from real sessions only. Finish your first focus session and it will show up here.';
+      ? (r.period === 'day'
+        ? 'Statistics appear here as soon as you finish or stop a session. Legacy data is weekly, so it shows in the Week, Month and Year views. Use the arrows or the year list to look at other periods.'
+        : 'Statistics appear here as soon as you finish or stop a session. Use the arrows or the year list to look at other periods.')
+      : 'Your statistics are built from real sessions and legacy data. Finish your first focus session and it will show up here.';
     return;
   }
   renderKpis(r);
+  renderLegacyNote(r);
   renderCharts(r);
 }
 
@@ -230,6 +283,7 @@ export function initDashboard() {
   $('#dash-prev').addEventListener('click', () => { state.anchor = shift(state.period, state.anchor, -1); load(); });
   $('#dash-next').addEventListener('click', () => { state.anchor = shift(state.period, state.anchor, 1); load(); });
   $('#dash-today').addEventListener('click', () => { state.anchor = Date.now(); load(); });
+  $('#dash-year').addEventListener('change', (e) => { state.anchor = anchorInYear(Number(e.target.value)); load(); });
 
   initActivity({ onOverview: load });
   registerPage('dashboard', { onShow: () => (activityVisible() ? refreshActivity() : load()) });

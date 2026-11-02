@@ -21,6 +21,17 @@
 .field .unit { width: 72px; color: var(--text-3); font-size: var(--fs-xs); }
 .field--range input { flex: 0 1 160px; }
 .field--range output { width: 44px; text-align: right; color: var(--text-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+/* Settings → Agenda → Tags in the Agenda: tag chips that switch on and off */
+.field--tags { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 0; }
+.tag-toggles { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag-toggles__empty { color: var(--text-3); font-size: var(--fs-xs); }
+.tag-toggle { cursor: pointer; font-size: var(--fs-xs); padding: 3px 12px 3px 9px; gap: 6px; transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast), box-shadow var(--t-fast); }
+.tag-toggle::before { content: ''; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid currentColor; }
+.tag-toggle[aria-pressed='false'] { color: var(--text-3); background: transparent; border-color: var(--line-strong); }
+.tag-toggle[aria-pressed='false']:hover { color: var(--c); border-color: color-mix(in srgb, var(--c) 45%, transparent); }
+.tag-toggle[aria-pressed='true'] { box-shadow: 0 0 calc(10px * var(--glow)) color-mix(in srgb, var(--c) 30%, transparent); }
+.tag-toggle[aria-pressed='true']::before { background: currentColor; }
+.tag-toggle:focus-visible { outline: 2px solid var(--c); outline-offset: 2px; }
 .field__hint { color: var(--text-3); font-size: var(--fs-xs); margin-top: 10px; overflow-wrap: anywhere; }
 .field__error { color: var(--danger); font-size: var(--fs-xs); flex-basis: 100%; }
 
@@ -50,3 +61,34 @@
   .field { flex-wrap: wrap; }
   .field .unit { width: auto; }
 }
+
+/* ---------------------------------------------------------------- legacy data manager */
+.legacy-entry {
+  margin: 0; padding: 14px; border: 1px solid var(--line-strong); border-radius: var(--r-md);
+  display: grid; grid-template-columns: 0.8fr 1.6fr 1.3fr 1.2fr 1fr; gap: 10px; align-items: end;
+}
+.legacy-entry .stack select, .legacy-entry .stack input { height: 36px; font-size: var(--fs-sm); width: 100%; }
+.legacy-entry__title { padding: 0 6px; color: var(--text-3); font-size: var(--fs-xs); }
+.legacy-entry__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.legacy-entry__hint { color: var(--text-3); font-family: var(--font-mono); font-size: var(--fs-xs); }
+.legacy-entry__error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.legacy-list__title { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); font-weight: 500; color: var(--text-2); margin-top: 4px; }
+.legacy-list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow: auto; border-top: 1px solid var(--line); }
+.legacy-list__empty { color: var(--text-3); font-size: var(--fs-sm); }
+.legacy-week { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.legacy-week__head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.legacy-week__num { font-family: var(--font-mono); color: var(--text); font-size: var(--fs-sm); }
+.legacy-week__dates { color: var(--text-3); font-size: var(--fs-xs); }
+.legacy-week__warn { color: var(--amber); font-size: var(--fs-xs); }
+.legacy-week__rows { list-style: none; margin: 0; padding: 0; }
+.legacy-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; min-height: 32px; padding: 0 4px 0 12px; border-radius: var(--r-sm); }
+.legacy-row[data-editing='true'] { background: color-mix(in srgb, var(--amber) 8%, transparent); box-shadow: inset 2px 0 0 var(--amber); }
+.legacy-row__what { color: var(--text-2); font-size: var(--fs-sm); }
+.legacy-row__value { font-family: var(--font-mono); color: var(--text); font-size: var(--fs-sm); }
+.legacy-row__actions { display: inline-flex; gap: 2px; }
+.legacy-row__del:hover { color: var(--danger); }
+@media (max-width: 640px) {
+  .legacy-entry { grid-template-columns: 1fr 1fr; }
+  .legacy-entry__week { grid-column: span 2; }
+}
+.dialog--legacy { width: min(780px, calc(100vw - 32px)); }

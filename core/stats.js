@@ -15,6 +15,12 @@
  *  - Focus time includes every second actually spent in focus mode, including
  *    sessions stopped early. Pomodoros only count completed focus sessions.
  *    Breaks never count as Pomodoros or focus time.
+ *  - Legacy data (weekly totals typed in from paper planners) is passed in as
+ *    { anchorMs, pomodoros, seconds } entries and belongs to the bucket that
+ *    holds its week's anchor day — the same rule as the Agenda and Activity
+ *    Statistics. It has no daily detail, so it is counted in week, month and
+ *    year reports (totals, averages, comparisons; per-month buckets in the
+ *    year view) but never in a single day, and never split across days.
  */
 
 const PERIODS = ['day', 'week', 'month', 'year'];
@@ -176,6 +182,25 @@ function pomodorosByDay(sessions, start, end) {
   return map;
 }
 
+/** Legacy totals with anchor in [start, end). */
+function legacyIn(legacy, start, end) {
+  let pomodoros = 0;
+  let seconds = 0;
+  for (const l of legacy) {
+    if (l.anchorMs >= start && l.anchorMs < end) { pomodoros += l.pomodoros || 0; seconds += l.seconds || 0; }
+  }
+  return { pomodoros, seconds };
+}
+
+/** Adds legacy totals to a summary (in place) and returns it. */
+function withLegacy(summary, extra) {
+  summary.pomodoros += extra.pomodoros;
+  summary.focusSeconds += extra.seconds;
+  summary.legacyPomodoros = extra.pomodoros;
+  summary.legacySeconds = extra.seconds;
+  return summary;
+}
+
 function pctDelta(cur, prev) {
   if (!prev) return null;
   return ((cur - prev) / prev) * 100;
@@ -193,7 +218,7 @@ function pctDelta(cur, prev) {
  * @param {{dailyGoal:number, weekStart:number}} p.settings
  * @param {number} p.now
  */
-function buildReport({ period, anchor, sessions, tasksCompleted = 0, tasksCompletedPrev = 0, settings, now }) {
+function buildReport({ period, anchor, sessions, legacy = [], tasksCompleted = 0, tasksCompletedPrev = 0, settings, now }) {
   if (!PERIODS.includes(period)) throw new Error(`Unknown period "${period}".`);
   const weekStart = settings.weekStart ?? 1;
   const cur = periodRange(period, anchor, weekStart);
@@ -203,12 +228,26 @@ function buildReport({ period, anchor, sessions, tasksCompleted = 0, tasksComple
   const curRows = rows.filter((s) => overlap(s.startMs, Math.max(s.endMs, s.startMs + 1), cur.start, cur.end) > 0);
   const prevRows = rows.filter((s) => overlap(s.startMs, Math.max(s.endMs, s.startMs + 1), prev.start, prev.end) > 0);
 
+  // Legacy weekly totals: never in a day report (they have no daily detail).
+  const weekly = period === 'day' ? [] : legacy;
   const buckets = aggregateBuckets(curRows, cur.buckets);
   const prevBuckets = aggregateBuckets(prevRows, prev.buckets);
-  const summary = { ...summarise(curRows, cur.start, cur.end), tasksCompleted };
-  const previous = { ...summarise(prevRows, prev.start, prev.end), tasksCompleted: tasksCompletedPrev };
-  summary.hasData = summary.sessionCount > 0;
-  previous.hasData = previous.sessionCount > 0;
+  if (cur.unit === 'month') {
+    // Year view: each legacy week goes to the month that holds its anchor day.
+    for (const b of [...buckets, ...prevBuckets]) {
+      const l = legacyIn(weekly, b.start, b.end);
+      b.pomodoros += l.pomodoros;
+      b.focusSeconds += l.seconds;
+      b.legacyPomodoros = l.pomodoros;
+      b.legacySeconds = l.seconds;
+    }
+  }
+  const curLegacy = legacyIn(weekly, cur.start, cur.end);
+  const prevLegacy = legacyIn(weekly, prev.start, prev.end);
+  const summary = withLegacy({ ...summarise(curRows, cur.start, cur.end), tasksCompleted }, curLegacy);
+  const previous = withLegacy({ ...summarise(prevRows, prev.start, prev.end), tasksCompleted: tasksCompletedPrev }, prevLegacy);
+  summary.hasData = summary.sessionCount > 0 || curLegacy.pomodoros > 0 || curLegacy.seconds > 0;
+  previous.hasData = previous.sessionCount > 0 || prevLegacy.pomodoros > 0 || prevLegacy.seconds > 0;
 
   const isCurrent = now >= cur.start && now < cur.end;
   const isFuture = cur.start > now;
@@ -218,7 +257,7 @@ function buildReport({ period, anchor, sessions, tasksCompleted = 0, tasksComple
   let comparedTo = previous;
   if (isCurrent) {
     const cut = Math.min(prev.start + (now - cur.start), prev.end);
-    comparedTo = { ...summarise(prevRows, prev.start, cut), hasData: previous.hasData };
+    comparedTo = { ...withLegacy(summarise(prevRows, prev.start, cut), legacyIn(weekly, prev.start, cut)), hasData: previous.hasData };
   }
 
   // Days covered so far (for averages): whole period if in the past.

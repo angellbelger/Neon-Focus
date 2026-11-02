@@ -59,7 +59,7 @@ function registerIpc(svc, { getWindow, dbPath, onSettingsChanged, startupInfo })
   const dataChanged = () => broadcast('data:changed', { at: Date.now() });
 
   // ---- timer
-  handle('timer:getState', () => engine.getState());
+  handle('timer:getState', () => { engine.tick(); return engine.getState(); });
   handle('timer:start', () => engine.start());
   handle('timer:pause', () => engine.pause());
   handle('timer:resume', () => engine.resume());
@@ -129,6 +129,19 @@ function registerIpc(svc, { getWindow, dbPath, onSettingsChanged, startupInfo })
   handle('agenda:yearNotes', () => svc.yearOpeningNotes());
   handle('notes:save', (_e, date, body) => { const n = notesRepo.save(date, body); dataChanged(); return n; });
   handle('notes:delete', (_e, date) => { const ok = notesRepo.delete(date); dataChanged(); return ok; });
+
+  // ---- legacy data (weekly totals from paper planners)
+  handle('legacy:list', (_e, year) => svc.legacyList(year === undefined || year === null ? undefined : year));
+  handle('legacy:weeks', (_e, year) => svc.legacyWeeks(year));
+  handle('legacy:find', (_e, q = {}) => svc.legacyRepo.find({
+    year: Number(q.year), week: Number(q.week), kind: q.kind, tagId: q.tagId === null || q.tagId === undefined ? null : Number(q.tagId),
+  }) || null);
+  handle('legacy:save', (_e, r = {}) => {
+    const rec = svc.saveLegacy({ id: r.id, year: r.year, week: r.week, kind: r.kind, tagId: r.tagId, value: r.value });
+    dataChanged();
+    return rec;
+  });
+  handle('legacy:delete', (_e, id) => { const ok = svc.legacyRepo.delete(id); dataChanged(); return ok; });
 
   // ---- activity statistics
   handle('activity:stats', (_e, range = {}) => svc.activityStats(cleanRange(range)));

@@ -149,10 +149,31 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   assert.ok(await page.isVisible('#rail-mini'));
   step('timer keeps running while on another page (rail mini timer visible)');
   await page.click('#rail-mini');
+  // --- the screen locks, the display sleeps and the window goes to the background mid-session:
+  //     the countdown keeps running, completes on time and the alarm still plays
+  const oscBeforeLock = await page.evaluate(() => window.__osc);
+  const elapsedAtLock = await page.evaluate(() => window.pomodoro.timer.getState().then((s) => s.elapsedMs));
+  await app.evaluate(({ powerMonitor, BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].hide();
+    powerMonitor.emit('lock-screen');
+    powerMonitor.emit('suspend');
+  });
+  await page.waitForTimeout(600);
+  const whileLocked = await page.evaluate(() => window.pomodoro.timer.getState());
+  assert.equal(whileLocked.status, 'running', 'locking / sleep does not pause');
+  assert.ok(whileLocked.elapsedMs >= elapsedAtLock + 400, `still counting while locked (${elapsedAtLock} -> ${whileLocked.elapsedMs})`);
+  assert.equal(whileLocked.notice, null);
   await waitFor(page, () => document.body.dataset.mode === 'long_break', null, { timeout: 8000 });
+  const oscWhileLocked = await page.evaluate(() => window.__osc);
+  assert.ok(oscWhileLocked > oscBeforeLock, 'alarm played while the window was hidden and the screen locked');
+  await app.evaluate(({ powerMonitor, BrowserWindow }) => {
+    powerMonitor.emit('resume');
+    powerMonitor.emit('unlock-screen');
+    BrowserWindow.getAllWindows()[0].show();
+  });
   await waitFor(page, () => document.querySelector('#today-pomodoros').textContent === '2');
   assert.equal(await page.textContent('#dial-time'), '00:03', 'long break uses the saved 3-minute setting');
-  step('second focus completed; interval=2 so a long break is next');
+  step('second focus kept running through lock + sleep + hidden window, completed on time with the alarm; interval=2 so a long break is next');
 
   // --- reset records an interrupted session
   await page.click('#btn-main');
@@ -445,7 +466,7 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   assert.equal(week.from, thisMonday);
   assert.equal(week.to, addDaysKey(thisMonday, 6));
   assert.ok(week.week.ttp >= after.ttp);
-  await waitFor(page, (v) => document.querySelector('#ag-week-ttp').textContent === `${v}P`, week.week.ttp);
+  await waitFor(page, (v) => document.querySelector('#ag-week-tally .tally__row--ttp dd').textContent === `${v}P`, week.week.ttp);
   step(`TTP updates live (${before.ttp} -> ${after.ttp}); H.E. counts only the English-tagged session; week box = whole-week total (${week.week.ttp}P)`);
 
   // "Weeks start on" in Settings drives the Agenda week (single source of truth)
@@ -461,13 +482,13 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   assert.deepEqual(await page.locator('.ag-day').evaluateAll((els) => els.map((e) => new Date(`${e.dataset.date}T12:00`).getDay())), [0, 1, 2, 3, 4, 5, 6]);
   assert.equal(await page.locator('.ag-day[data-today="true"]').getAttribute('data-date'), todayKey);
   const sunWeek = await page.evaluate((k) => window.pomodoro.agenda.days(k, 7), thisSunday);
-  await waitFor(page, (v) => document.querySelector('#ag-week-ttp').textContent === `${v}P`, sunWeek.week.ttp);
+  await waitFor(page, (v) => document.querySelector('#ag-week-tally .tally__row--ttp dd').textContent === `${v}P`, sunWeek.week.ttp);
   assert.equal(await page.locator('#ag-cal .minical__dow').first().textContent(), new Date(2026, 0, 4).toLocaleDateString('en-GB', { weekday: 'narrow' }), 'mini calendar starts on Sunday too');
   // changing the setting while the Agenda is open reorganises it at once
   await page.evaluate(() => window.pomodoro.settings.update({ weekStart: 1 }));
   await waitFor(page, (k) => document.querySelector('.ag-day')?.dataset.date === k, thisMonday);
   assert.deepEqual(await weekDates(), [0, 1, 2, 3, 4, 5, 6].map((n) => addDaysKey(thisMonday, n)), 'back to Monday to Sunday');
-  await waitFor(page, (v) => document.querySelector('#ag-week-ttp').textContent === `${v}P`, week.week.ttp);
+  await waitFor(page, (v) => document.querySelector('#ag-week-tally .tally__row--ttp dd').textContent === `${v}P`, week.week.ttp);
   assert.equal(await page.inputValue('#s-weekstart'), '1', 'Settings shows the same value');
   step(`"Weeks start on" Sunday -> Agenda ${thisSunday}..${addDaysKey(thisSunday, 6)} (week box ${sunWeek.week.ttp}P); back to Monday live -> ${thisMonday}..${addDaysKey(thisMonday, 6)}`);
 
@@ -619,11 +640,182 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   await shot(page, '13-activity');
   await page.click('[data-dash-view="overview"]');
 
+  // --- Settings → Tags in the Agenda: several tags, each by its own name (never H.E.), live
+  const research = await page.evaluate(() => window.pomodoro.tags.create({ name: 'Research' }));
+  const sessionsBeforeLegacy = await page.evaluate(() => window.pomodoro.history.list({}).then((r) => (r.rows || r).length));
+  await page.click('[data-nav="agenda"]');
+  await page.waitForSelector(`.ag-day[data-date="${todayKey}"]`);
+  const box = () => page.evaluate(() => {
+    const rows = (sel) => [...document.querySelectorAll(`${sel} .tally__row--tag`)].map((r) => [r.querySelector('.tally__name').textContent, r.querySelector('dd').textContent]);
+    return {
+      ttp: parseInt(document.querySelector('#ag-week-tally .tally__row--ttp dd').textContent, 10),
+      yttp: parseInt(document.querySelector('#ag-year-tally .tally__row--ttp dd').textContent, 10),
+      rows: rows('#ag-week-tally'),
+      yrows: rows('#ag-year-tally'),
+      legacy: document.querySelector('#ag-week-legacy').hidden ? null : document.querySelector('#ag-week-legacy').textContent,
+    };
+  });
+  const tagRowNames = () => box().then((b) => b.rows.map((r) => r[0]).join());
+  const base = await box();
+  assert.deepEqual(base.rows.map((r) => r[0]), ['English'], 'until chosen: the tag named English, shown as "English"');
+  assert.equal(base.legacy, null);
+  assert.equal(await page.locator('.agenda__side dt, .ag-day__stats dt').evaluateAll((els) => els.filter((e) => /H\.E\./.test(e.textContent)).length), 0, 'no fixed H.E. label anywhere');
+  // a tag created now shows up in Settings by itself
+  await page.click('[data-nav="settings"]');
+  const german = await page.evaluate(() => window.pomodoro.tags.create({ name: 'German' }));
+  await page.waitForSelector(`#s-agenda-tags [data-tag-id="${german.id}"]`);
+  assert.equal(await page.getAttribute(`#s-agenda-tags [data-tag-id="${german.id}"]`, 'aria-pressed'), 'false');
+  await page.click(`#s-agenda-tags [data-tag-id="${german.id}"]`);
+  await page.click(`#s-agenda-tags [data-tag-id="${research.id}"]`);
+  await waitFor(page, () => window.pomodoro.settings.get().then((st) => Array.isArray(st.hoursTagIds) && st.hoursTagIds.length === 3));
+  await page.click('[data-nav="agenda"]');
+  await waitFor(page, () => document.querySelectorAll('#ag-year-tally .tally__row--tag').length === 3);
+  let b2 = await box();
+  assert.deepEqual(b2.rows.map((r) => r[0]), ['English', 'German', 'Research']);
+  assert.deepEqual(b2.yrows.map((r) => r[0]), ['English', 'German', 'Research']);
+  assert.equal(b2.rows[0][1], base.rows[0][1], 'English hours unchanged');
+  assert.equal(b2.ttp, base.ttp, 'TTP is still every Pomodoro');
+  assert.deepEqual(await page.locator(`.ag-day[data-date="${todayKey}"] .ag-day__stats dt`).allTextContents(), ['TTP', 'English'], 'a day lists the selected tags that have time that day');
+  const tallyBox = await page.locator('#ag-week-tally').boundingBox();
+  const weekBox = await page.locator('.weekbox:not(.weekbox--year)').boundingBox();
+  assert.ok(tallyBox.x + tallyBox.width <= weekBox.x + weekBox.width + 0.5, 'rows fit inside the box');
+  await shot(page, '14-agenda-tags');
+  // none selected: only TTP
+  await page.click('[data-nav="settings"]');
+  for (const id of await page.locator('#s-agenda-tags [aria-pressed="true"]').evaluateAll((els) => els.map((e) => e.dataset.tagId))) {
+    await page.click(`#s-agenda-tags [data-tag-id="${id}"]`);
+    await waitFor(page, (k) => document.querySelector(`#s-agenda-tags [data-tag-id="${k}"]`)?.getAttribute('aria-pressed') === 'false', id);
+  }
+  await waitFor(page, () => window.pomodoro.settings.get().then((st) => Array.isArray(st.hoursTagIds) && st.hoursTagIds.length === 0));
+  await page.click('[data-nav="agenda"]');
+  await waitFor(page, () => document.querySelectorAll('#ag-week-tally .tally__row--tag, #ag-year-tally .tally__row--tag').length === 0);
+  assert.deepEqual(await page.locator(`.ag-day[data-date="${todayKey}"] .ag-day__stats dt`).allTextContents(), ['TTP']);
+  // just Research for the legacy checks below
+  await page.click('[data-nav="settings"]');
+  await page.click(`#s-agenda-tags [data-tag-id="${research.id}"]`);
+  await page.click('[data-nav="agenda"]');
+  await waitFor(page, () => document.querySelector('#ag-week-tally .tally__name')?.textContent === 'Research');
+  assert.equal(await tagRowNames(), 'Research');
+  assert.deepEqual((await box()).rows, [['Research', '0 min']]);
+  step('Settings → Tags in the Agenda: English + German + Research, each by name in both boxes and every day; none = TTP only; new tags selectable at once');
+
+  // --- Legacy data: add, duplicate refused, edit, delete — through Settings
+  const thisWeek = await page.evaluate(() => window.pomodoro.legacy.weeks(new Date().getFullYear()).then((r) => r.current));
+  await page.click('[data-nav="settings"]');
+  await page.click('#s-legacy');
+  await page.waitForSelector('#legacy-manager[open]');
+  assert.equal(await page.inputValue('#lg-year'), String(thisWeek.year));
+  assert.equal(await page.inputValue('#lg-week'), String(thisWeek.week), 'opens on the current week');
+  await page.fill('#lg-value', '12');
+  await page.click('#lg-save');
+  await page.waitForSelector('#lg-list .legacy-row[data-kind="pomodoros"]');
+  await page.selectOption('#lg-kind', 'tag_hours');
+  await page.selectOption('#lg-tag', String(research.id));
+  await page.fill('#lg-value', '2:30');
+  assert.equal(await page.textContent('#lg-hint'), '= 2 h 30 min');
+  await page.click('#lg-save');
+  await page.waitForSelector('#lg-list .legacy-row[data-kind="tag_hours"]');
+  // a second TTP for the same week is refused, with a shortcut to edit the first
+  await page.selectOption('#lg-kind', 'pomodoros');
+  await page.fill('#lg-value', '5');
+  await page.click('#lg-save');
+  await page.waitForSelector('#lg-error:not([hidden])');
+  assert.match(await page.textContent('#lg-error-text'), /already has a TTP total/);
+  await page.click('#lg-edit-existing');
+  assert.equal(await page.inputValue('#lg-value'), '12');
+  assert.equal(await page.textContent('#lg-save'), 'Save changes');
+  await page.fill('#lg-value', '15');
+  await page.click('#lg-save');
+  await waitFor(page, () => document.querySelector('#lg-list .legacy-row[data-kind="pomodoros"] .legacy-row__value')?.textContent === '15P');
+  assert.equal((await page.evaluate(() => window.pomodoro.legacy.list())).length, 2, 'no duplicate was created');
+  assert.ok(await page.locator('.legacy-list__title .legacy-mark').isVisible());
+  await page.click('#legacy-form button[value="close"]');
+
+  await page.click('[data-nav="agenda"]');
+  await waitFor(page, (v) => parseInt(document.querySelector('#ag-week-tally .tally__row--ttp dd').textContent, 10) === v, base.ttp + 15);
+  let withLegacy = await box();
+  assert.deepEqual(withLegacy.rows, [['Research', '2 h 30 min']]);
+  await waitFor(page, (v) => parseInt(document.querySelector('#ag-year-tally .tally__row--ttp dd').textContent, 10) === v, base.yttp + 15);
+  withLegacy = await box();
+  assert.deepEqual(withLegacy.yrows, [['Research', '2 h 30 min']], 'the so-far box includes it too');
+  assert.match(withLegacy.legacy, /Legacy\s*incl\. 15P · Research 2 h 30 min/);
+  assert.equal(await page.evaluate(() => window.pomodoro.history.list({}).then((r) => (r.rows || r).length)), sessionsBeforeLegacy, 'sessions untouched');
+  const dayTtpSum = await page.locator('.ag-day .ag-day__stats div:first-child dd').evaluateAll((els) => els.reduce((n, e) => n + Number(e.textContent), 0));
+  assert.equal(dayTtpSum, base.ttp, 'day rows keep tracked data only');
+  step(`Legacy data via Settings: TTP 15 + 2 h 30 min Research for W${thisWeek.week}; duplicate refused -> edited; week and year boxes include it with a "Legacy" marker`);
+
+  // Activity Statistics marks figures that include legacy records
+  await page.click('[data-nav="dashboard"]');
+  await page.click('[data-dash-view="activity"]');
+  await page.click('[data-act-range="week"]');
+  await waitFor(page, () => [...document.querySelectorAll('#act-body tr')].some((r) => r.textContent.includes('Research') && r.querySelector('.legacy-mark')));
+  assert.ok(await page.locator('#act-foot .legacy-mark').count() >= 1);
+  await page.click('[data-dash-view="overview"]');
+
+  // delete the hours record from the manager
+  await page.click('[data-nav="settings"]');
+  await page.click('#s-legacy');
+  await page.waitForSelector('#lg-list .legacy-row[data-kind="tag_hours"]');
+  await page.click('#lg-list .legacy-row[data-kind="tag_hours"] .legacy-row__del');
+  await page.click('#confirm-ok');
+  await waitFor(page, () => !document.querySelector('#lg-list .legacy-row[data-kind="tag_hours"]'));
+  await page.click('#legacy-form button[value="close"]');
+  const english = (await page.evaluate(() => window.pomodoro.tags.list())).find((t) => t.name === 'English');
+  await page.click(`#s-agenda-tags [data-tag-id="${english.id}"]`);
+  await page.click(`#s-agenda-tags [data-tag-id="${research.id}"]`);
+  await waitFor(page, (id) => window.pomodoro.settings.get().then((st) => JSON.stringify(st.hoursTagIds) === JSON.stringify([id])), english.id);
+  await page.click('[data-nav="agenda"]');
+  await waitFor(page, () => document.querySelector('#ag-week-tally .tally__name')?.textContent === 'English');
+  withLegacy = await box();
+  assert.equal(withLegacy.ttp, base.ttp + 15);
+  assert.deepEqual(withLegacy.rows, base.rows, 'back to English; the deleted legacy hours are gone');
+  step('Activity Statistics marks legacy figures; a legacy record deleted; tags back to English only');
+
+  // --- previous years: Dashboard navigation and the Agenda's per-year "so far" box include legacy data
+  const lastYear = new Date().getFullYear() - 1;
+  const oldIds = await page.evaluate(async ({ y, tagId }) => [
+    (await window.pomodoro.legacy.save({ year: y, week: 10, kind: 'pomodoros', value: 40 })).id,
+    (await window.pomodoro.legacy.save({ year: y, week: 10, kind: 'tag_hours', tagId, value: 5 * 3600 })).id,
+  ], { y: lastYear, tagId: english.id });
+  await page.click('[data-nav="dashboard"]');
+  await page.click('[data-dash-view="overview"]');
+  await page.click('[data-period="year"]');
+  await waitFor(page, (y) => [...document.querySelectorAll('#dash-year option')].some((o) => o.value === String(y)), lastYear);
+  assert.equal(await page.isDisabled('#dash-prev'), false, 'earlier years are reachable');
+  await page.selectOption('#dash-year', String(lastYear));
+  await waitFor(page, (y) => document.querySelector('#dash-range').textContent.includes(String(y)), lastYear);
+  assert.equal(await page.isVisible('#dash-body'), true, 'a year with only legacy data shows its statistics');
+  const kpiPomodoros = await page.locator('#dash-kpis .kpi').first().locator('.kpi__value').textContent();
+  assert.equal(kpiPomodoros, '40');
+  assert.ok(await page.locator('#dash-kpis .kpi').first().locator('.legacy-mark').isVisible());
+  assert.match(await page.textContent('#dash-legacy'), /Includes 40 Pomodoros and 5h 00m of tag hours entered as weekly totals, shown in the month of each week/);
+  const y1 = await page.evaluate((y) => window.pomodoro.stats.report('year', new Date(y, 5, 1).getTime()), lastYear);
+  assert.equal(y1.buckets[2].pomodoros, 40, 'March bar of last year');
+  assert.equal(y1.summary.pomodoros, 40);
+  await shot(page, '15-dashboard-last-year');
+  // the arrows also move between years; back to the current one
+  await page.click('#dash-next');
+  await waitFor(page, (y) => document.querySelector('#dash-range').textContent.includes(String(y)), lastYear + 1);
+  assert.equal(await page.inputValue('#dash-year'), String(lastYear + 1));
+  await page.click('[data-period="day"]');
+
+  await page.click('[data-nav="agenda"]');
+  await page.locator('#ag-years .planner', { hasText: String(lastYear) }).first().click();
+  await waitFor(page, (y) => document.querySelector('#ag-year-title').textContent === `${y} in total`, lastYear);
+  await waitFor(page, () => document.querySelector('#ag-year-tally .tally__row--ttp dd').textContent === '40P');
+  assert.deepEqual((await box()).yrows, [['English', '5 h']], 'that year only: legacy English hours');
+  await page.click('#ag-today');
+  await waitFor(page, (y) => document.querySelector('#ag-year-title').textContent === `${y} so far`, lastYear + 1);
+  await waitFor(page, (v) => parseInt(document.querySelector('#ag-year-tally .tally__row--ttp dd').textContent, 10) === v, base.yttp + 15);
+  await page.evaluate((ids) => Promise.all(ids.map((id) => window.pomodoro.legacy.remove(id))), oldIds);
+  step(`previous year ${lastYear}: Dashboard year list + arrows reach it (40 Pomodoros, 5 h, March), Agenda "${lastYear} in total" = 40P / English 5 h; current planner back to "so far"`);
+
   // everything persists after a restart
   await app.close();
   ({ app, page } = await launch());
   await page.click('[data-nav="agenda"]');
   await waitFor(page, (k) => document.querySelector(`.ag-day[data-date="${k}"] .ag-note__text`)?.textContent.endsWith('Fireworks!'), todayKey);
+  assert.equal((await page.evaluate(() => window.pomodoro.legacy.list())).map((r) => `${r.kind}:${r.value}`).join(), 'pomodoros:15', 'legacy record persists');
   await page.click('[data-nav="goals"]');
   await page.waitForSelector('.goal >> text=Complete my research project');
   // delete the note
@@ -632,7 +824,7 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   await page.click(`.ag-day[data-date="${todayKey}"] .ag-note__del`);
   await page.click('#confirm-ok');
   await waitFor(page, (k) => !document.querySelector(`.ag-day[data-date="${k}"] .ag-note__text`), todayKey);
-  step('notes, goals and tags persist after restart; note deleted');
+  step('notes, goals, tags and legacy data persist after restart; note deleted');
 
   // --- restore of a running session after a hard kill
   await page.click('[data-nav="focus"]');
