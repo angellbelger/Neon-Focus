@@ -1,0 +1,276 @@
+/* ================================================================ Liquid Glass
+   A shared glass treatment for every surface that holds information or takes
+   input: semi-transparent fill, a light backdrop blur, a fine translucent
+   edge, a soft highlight along the top edge (the "reflection") and a quiet
+   shadow. It only changes how surfaces are painted: sizes, spacing, type and
+   colours stay as they are. Loaded last, so it refines the other sheets.
+
+   Reusable pieces
+   - tokens below (--glass-*) — tune the whole effect in one place;
+   - .glass / .glass--strong / .glass--subtle — utility classes for new UI;
+   - the component list further down applies the same recipe to existing
+     classes (.panel, .btn, inputs, .dialog, ...), so no markup changes.
+   Accent and danger buttons keep their solid neon fills. */
+
+:root {
+  --glass-tint: 150, 190, 255;                 /* rgb of the cool glass tint */
+  --glass-fill: linear-gradient(160deg, rgba(var(--glass-tint), 0.085) 0%, rgba(var(--glass-tint), 0.04) 48%, rgba(var(--glass-tint), 0.03) 100%);
+  --glass-fill-subtle: linear-gradient(160deg, rgba(var(--glass-tint), 0.055), rgba(var(--glass-tint), 0.02));
+  /* dark glass: for overlays and anything that must stay readable on images */
+  --glass-fill-strong: linear-gradient(160deg, rgba(24, 30, 48, 0.82), rgba(10, 13, 22, 0.86));
+  /* top-edge reflection: fades out within 42% of the height, never more than 80px (tall panels stay dark) */
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) min(42%, 80px));
+  --glass-edge: rgba(175, 215, 255, 0.16);
+  --glass-edge-strong: rgba(175, 225, 255, 0.28);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.09), inset 0 0 0 1px rgba(255, 255, 255, 0.015);
+  --glass-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.55);
+  --glass-blur: blur(16px) saturate(140%);
+  --glass-blur-strong: blur(24px) saturate(150%);
+  --glass-ease: 180ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* ------------------------------------------------------------------ utilities */
+.glass, .glass--strong, .glass--subtle {
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+.glass { background: var(--glass-sheen), var(--glass-fill); }
+.glass--strong { background: var(--glass-sheen), var(--glass-fill-strong); border-color: var(--glass-edge-strong); -webkit-backdrop-filter: var(--glass-blur-strong); backdrop-filter: var(--glass-blur-strong); }
+.glass--subtle { background: var(--glass-fill-subtle); box-shadow: var(--glass-highlight); -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* ------------------------------------------------------------------ navigation rail */
+.rail {
+  background: var(--glass-sheen), linear-gradient(180deg, rgba(14, 18, 30, 0.78), rgba(6, 8, 14, 0.82));
+  border-right-color: var(--glass-edge);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.03), 8px 0 30px -18px rgba(0, 0, 0, 0.7);
+  -webkit-backdrop-filter: var(--glass-blur-strong);
+  backdrop-filter: var(--glass-blur-strong);
+}
+.rail__item { transition: color var(--glass-ease), background var(--glass-ease), border-color var(--glass-ease), box-shadow var(--glass-ease); }
+.rail__item:hover { background: var(--glass-fill); border-color: var(--glass-edge); box-shadow: var(--glass-highlight); }
+@media (max-width: 760px) {
+  .rail { border-top-color: var(--glass-edge); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 -8px 30px -18px rgba(0, 0, 0, 0.7); }
+}
+
+/* ------------------------------------------------------------------ panels & cards */
+.panel {
+  background: var(--glass-sheen), var(--glass-fill);
+  border-color: var(--glass-edge);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+/* Dashboard figures, empty states */
+.kpis {
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--r-lg);
+  background: var(--glass-sheen), var(--glass-fill);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  overflow: hidden;
+}
+.kpi + .kpi { border-left-color: var(--glass-edge); }
+.dash-empty { background: var(--glass-fill-subtle); border-color: var(--glass-edge-strong); box-shadow: var(--glass-highlight); }
+
+/* Agenda: week / year boxes, day tallies, planners */
+.weekbox {
+  background: var(--glass-sheen), var(--glass-fill);
+  border-color: var(--glass-edge-strong);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+.ag-day__stats { background: var(--glass-sheen), linear-gradient(160deg, rgba(14, 18, 30, 0.6), rgba(5, 6, 11, 0.5)); border-color: var(--glass-edge); box-shadow: var(--glass-highlight); }
+.planner { background: var(--glass-fill-subtle); border-top-color: var(--glass-edge); border-right-color: var(--glass-edge); border-bottom-color: var(--glass-edge); box-shadow: var(--glass-highlight); transition: background var(--glass-ease), border-color var(--glass-ease), color var(--glass-ease); }
+.planner:hover { background: var(--glass-fill); }
+
+/* Tasks: the step / history drawers inside a task */
+.task__history { background: var(--glass-fill-subtle); border-color: var(--glass-edge); box-shadow: var(--glass-highlight); }
+
+/* Settings: playlist tracks, legacy entry box */
+.track { background: var(--glass-sheen), linear-gradient(160deg, rgba(14, 18, 30, 0.55), rgba(5, 6, 11, 0.45)); box-shadow: var(--glass-highlight); }
+.track[data-selected='true'] { box-shadow: inset 2px 0 0 var(--focus), var(--glass-highlight); }
+.legacy-entry { background: var(--glass-fill-subtle); border-color: var(--glass-edge); box-shadow: var(--glass-highlight); }
+
+/* progress tracks */
+.goalbar, .steps-toggle__bar, .share { box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.04); }
+
+/* ------------------------------------------------------------------ buttons & controls */
+.btn:where(:not(.btn--accent, .btn--danger)) {
+  background: var(--glass-sheen), var(--glass-fill);
+  border-color: var(--glass-edge-strong);
+  box-shadow: var(--glass-highlight);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.btn--ghost:where(:not(.btn--accent, .btn--danger)) { background: var(--glass-fill-subtle); }
+.btn:where(:not(.btn--accent, .btn--danger)):hover:not(:disabled) {
+  background: var(--glass-sheen), linear-gradient(160deg, rgba(var(--glass-tint), 0.14), rgba(var(--glass-tint), 0.06));
+  border-color: color-mix(in srgb, var(--focus) 40%, transparent);
+  box-shadow: var(--glass-highlight), 0 0 calc(14px * var(--glow)) -4px color-mix(in srgb, var(--focus) 40%, transparent);
+}
+.btn--accent { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 calc(18px * var(--glow)) color-mix(in srgb, var(--focus) 45%, transparent); }
+.btn--danger { box-shadow: var(--glass-highlight); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+
+.icon-btn {
+  background: var(--glass-fill-subtle);
+  border-color: var(--glass-edge);
+  box-shadow: var(--glass-highlight);
+  transition: color var(--glass-ease), border-color var(--glass-ease), background var(--glass-ease), box-shadow var(--glass-ease);
+}
+.icon-btn:hover:not(:disabled) { background: var(--glass-fill); border-color: var(--glass-edge-strong); }
+
+.segmented, .mini-toggle {
+  background: var(--glass-sheen), var(--glass-fill);
+  border-color: var(--glass-edge);
+  box-shadow: var(--glass-highlight);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+.segmented button, .mini-toggle button { transition: background var(--glass-ease), color var(--glass-ease), box-shadow var(--glass-ease); }
+.segmented button[aria-checked='true'], .mini-toggle button[aria-checked='true'] {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--focus) 22%, transparent), color-mix(in srgb, var(--focus) 10%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--focus) 38%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.tag-toggle[aria-pressed='false'] { background: var(--glass-fill-subtle); }
+
+/* ------------------------------------------------------------------ fields */
+input[type='text'], input[type='number'], input[type='date'], select, textarea {
+  background: linear-gradient(180deg, rgba(5, 6, 11, 0.62), rgba(10, 13, 22, 0.5));
+  border-color: var(--glass-edge-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.04);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  transition: border-color var(--glass-ease), box-shadow var(--glass-ease), background var(--glass-ease);
+}
+input[type='text']:hover, input[type='number']:hover, input[type='date']:hover, select:hover, textarea:hover { border-color: color-mix(in srgb, var(--focus) 30%, var(--glass-edge-strong)); }
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 22%, transparent), inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+select option { background: #0e1220; }
+input[type='checkbox'][role='switch'] { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 0 rgba(255, 255, 255, 0.05); }
+
+/* ------------------------------------------------------------------ overlays: dialogs, menus, toasts */
+.dialog {
+  background: var(--glass-sheen), var(--glass-fill-strong);
+  border-color: var(--glass-edge-strong);
+  box-shadow: var(--glass-highlight), 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 calc(40px * var(--glow)) color-mix(in srgb, var(--focus) 12%, transparent);
+  -webkit-backdrop-filter: var(--glass-blur-strong);
+  backdrop-filter: var(--glass-blur-strong);
+}
+.dialog::backdrop { background: rgba(3, 4, 8, 0.55); -webkit-backdrop-filter: blur(6px) saturate(120%); backdrop-filter: blur(6px) saturate(120%); }
+.picker-list button { transition: background var(--glass-ease), border-color var(--glass-ease); }
+.picker-list button:hover { background: var(--glass-fill); border-color: var(--glass-edge); }
+.toast {
+  background: var(--glass-sheen), var(--glass-fill-strong);
+  border-color: var(--glass-edge-strong);
+  box-shadow: var(--glass-highlight), 0 12px 34px rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: var(--glass-blur-strong);
+  backdrop-filter: var(--glass-blur-strong);
+}
+
+/* ------------------------------------------------------------------ Focus page */
+.mode-switch {
+  padding: 3px;
+  border-radius: var(--r-pill);
+  background: var(--glass-sheen), var(--glass-fill);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-highlight);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+.mode-switch button { border-radius: var(--r-pill); }
+.mode-switch button[aria-checked='true'] { background: color-mix(in srgb, var(--mode) 10%, transparent); }
+.banner { -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-highlight), var(--glass-shadow); }
+.ctrl { box-shadow: var(--glass-highlight); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.ctrl--side { background: var(--glass-sheen), var(--glass-fill); border-color: var(--glass-edge-strong); }
+.ctrl--side:hover:not(:disabled) { background: var(--glass-sheen), linear-gradient(160deg, rgba(var(--glass-tint), 0.14), rgba(var(--glass-tint), 0.06)); }
+.ctrl--main {
+  background: var(--glass-sheen), color-mix(in srgb, var(--mode) 14%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 calc(28px * var(--glow)) color-mix(in srgb, var(--mode) 35%, transparent), inset 0 0 calc(18px * var(--glow)) color-mix(in srgb, var(--mode) 18%, transparent);
+}
+.ctrl--main:hover { background: var(--glass-sheen), color-mix(in srgb, var(--mode) 22%, transparent); }
+body[data-status='running'] .ctrl--main { background: var(--glass-sheen), rgba(var(--glass-tint), 0.03); }
+.task-chip { background: var(--glass-fill-subtle); box-shadow: var(--glass-highlight); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); transition: color var(--glass-ease), border-color var(--glass-ease), background var(--glass-ease); }
+.task-chip:hover:not(:disabled) { background: var(--glass-fill); }
+.today {
+  padding: 14px 0;
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--r-lg);
+  background: var(--glass-sheen), var(--glass-fill);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+.today__item + .today__item { border-left-color: var(--glass-edge); }
+
+/* ------------------------------------------------------------------ Focus page over a wallpaper
+   With a personal image behind the timer, every information surface turns to
+   dark glass and small text gets a little more weight and a soft shadow, so
+   nothing blends into the picture, whatever its colours. */
+main.has-wallpaper .page--focus .mode-switch,
+main.has-wallpaper .page--focus .task-chip,
+main.has-wallpaper .page--focus .today,
+main.has-wallpaper .page--focus .ctrl--side,
+main.has-wallpaper .page--focus .banner {
+  background: var(--glass-sheen), var(--glass-fill-strong);
+  border-color: var(--glass-edge-strong);
+  -webkit-backdrop-filter: var(--glass-blur-strong);
+  backdrop-filter: var(--glass-blur-strong);
+}
+main.has-wallpaper .page--focus .ctrl--main {
+  background: var(--glass-sheen), linear-gradient(color-mix(in srgb, var(--mode) 16%, transparent), color-mix(in srgb, var(--mode) 16%, transparent)), rgba(10, 13, 22, 0.72);
+  -webkit-backdrop-filter: var(--glass-blur-strong);
+  backdrop-filter: var(--glass-blur-strong);
+}
+/* a dark glass disc behind the clock face, inside the ring of tubes */
+main.has-wallpaper .page--focus .dial::before {
+  content: ''; position: absolute; inset: 11%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 38%, rgba(20, 26, 42, 0.62), rgba(5, 6, 11, 0.74) 72%);
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 20px 50px -20px rgba(0, 0, 0, 0.8);
+  -webkit-backdrop-filter: var(--glass-blur-strong);
+  backdrop-filter: var(--glass-blur-strong);
+  pointer-events: none;
+}
+main.has-wallpaper .page--focus .dial__svg { position: relative; }
+main.has-wallpaper .page--focus .dial__track { stroke: rgba(255, 255, 255, 0.1); }
+main.has-wallpaper .page--focus .tick:not(.is-lit) { stroke: rgba(255, 255, 255, 0.16); }
+main.has-wallpaper .page--focus .mode-switch button,
+main.has-wallpaper .page--focus .dial__state,
+main.has-wallpaper .page--focus .today dt,
+main.has-wallpaper .page--focus .task-chip { color: var(--text-2); }
+main.has-wallpaper .page--focus .mode-switch button[aria-checked='true'] { color: var(--mode); }
+main.has-wallpaper .page--focus .task-chip[data-has-task='true'],
+main.has-wallpaper .page--focus .today dd { color: var(--text); }
+main.has-wallpaper .page--focus .dial__mode,
+main.has-wallpaper .page--focus .dial__state,
+main.has-wallpaper .page--focus .today dt,
+main.has-wallpaper .page--focus .today dd,
+main.has-wallpaper .page--focus .mode-switch button { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65); }
+main.has-wallpaper .page--focus .cycle li:not(.is-done):not(.is-current) { background: rgba(255, 255, 255, 0.24); }
+/* disabled controls stay solid dark glass instead of fading into the picture */
+main.has-wallpaper .page--focus .ctrl:disabled { opacity: 1; color: var(--text-3); }
+main.has-wallpaper .credit {
+  width: fit-content; margin: 0 auto 8px; padding: 4px 14px; border-radius: var(--r-pill);
+  background: rgba(5, 6, 11, 0.62); border: 1px solid var(--glass-edge);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 calc(8px * var(--glow)) rgba(62, 242, 255, 0.35); opacity: 0.95; }
+
+/* ------------------------------------------------------------------ fallbacks */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-fill: linear-gradient(160deg, #121828, #0c101b);
+    --glass-fill-subtle: linear-gradient(160deg, #0f1421, #0b0e18);
+    --glass-fill-strong: linear-gradient(160deg, #161c2e, #0b0e18);
+  }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --glass-fill: linear-gradient(160deg, rgba(20, 26, 42, 0.92), rgba(12, 16, 27, 0.92)); }
+}

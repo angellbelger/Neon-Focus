@@ -946,12 +946,22 @@ function writePng(file, w, h) {
   assert.equal(bg.size, 'cover, cover, cover');
   assert.equal(bg.dim, '0.4');
   assert.ok(await page.isVisible('#btn-main'), 'timer controls still visible');
+  // readability over the picture: information surfaces are dark glass, disabled controls stay solid
+  const focusGlass = await page.evaluate(() => ['.mode-switch', '.today', '.task-chip', '.ctrl--side'].map((sel) => {
+    const cs = getComputedStyle(document.querySelector(`.page--focus ${sel}`));
+    return [sel, cs.backdropFilter !== 'none' && /gradient/.test(cs.backgroundImage)];
+  }));
+  assert.ok(focusGlass.every(([, ok]) => ok), `glass behind Focus elements: ${JSON.stringify(focusGlass)}`);
+  assert.notEqual(await page.evaluate(() => getComputedStyle(document.querySelector('.dial'), '::before').content), 'none', 'glass disc behind the clock face');
+  assert.equal(await page.locator('#btn-reset').evaluate((el) => getComputedStyle(el).opacity), '1', 'a disabled control does not fade into the wallpaper');
   await shot(page, '16-focus-wallpaper');
   for (const other of ['dashboard', 'agenda', 'tasks', 'goals', 'history', 'settings']) {
     await page.click(`[data-nav="${other}"]`);
     bg = await mainBg();
     assert.equal(bg.on, false, `no wallpaper on ${other}`);
     assert.equal(bg.img, 'none', `${other} background untouched`);
+    const glassy = await page.evaluate(() => [...document.querySelectorAll('.page:not([hidden]) .panel, .page:not([hidden]) .weekbox, .page:not([hidden]) .kpis')].filter((el) => el.offsetParent).every((el) => getComputedStyle(el).backdropFilter.includes('blur')));
+    assert.ok(glassy, `glass panels on ${other}`);
   }
   await page.uncheck('#s-wall-on');
   await page.click('[data-nav="focus"]');
