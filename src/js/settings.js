@@ -8,6 +8,7 @@ import { registerPage } from './navigation.js';
 import { plural, dateShort } from './format.js';
 import { loadTags } from './tags.js';
 import { openLegacyManager } from './legacy.js';
+import { initMediaSettings, refreshMediaSettings } from './media-settings.js';
 
 let themeRadios;
 
@@ -208,6 +209,7 @@ export function initSettings() {
   });
   $('#s-import').addEventListener('click', importDatabase);
   $('#s-legacy').addEventListener('click', openLegacyManager);
+  initMediaSettings();
   $('#s-reveal').addEventListener('click', () => api.data.revealDatabase().catch(toastError));
   $('#s-defaults').addEventListener('click', async () => {
     const ok = await confirmAction({
@@ -234,6 +236,7 @@ export function initSettings() {
   registerPage('settings', {
     onShow: async () => {
       fillAgendaTags();
+      refreshMediaSettings();
       try {
         const info = await api.app.info();
         $('#s-db-path').textContent = `Your data is stored in a local SQLite database: ${info.dbPath}`;

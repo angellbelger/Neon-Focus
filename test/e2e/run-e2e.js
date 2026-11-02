@@ -60,6 +60,44 @@ async function waitFor(page, fn, arg = null, { timeout = 10000 } = {}) {
 
 const step = (msg) => console.log(`  ✓ ${msg}`);
 
+/** A short sine tone as a real WAV file (16-bit mono). */
+function writeWav(file, seconds, freq) {
+  const rate = 8000;
+  const n = Math.round(rate * seconds);
+  const buf = Buffer.alloc(44 + n * 2);
+  buf.write('RIFF', 0); buf.writeUInt32LE(36 + n * 2, 4); buf.write('WAVE', 8);
+  buf.write('fmt ', 12); buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22);
+  buf.writeUInt32LE(rate, 24); buf.writeUInt32LE(rate * 2, 28); buf.writeUInt16LE(2, 32); buf.writeUInt16LE(16, 34);
+  buf.write('data', 36); buf.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i += 1) buf.writeInt16LE(Math.round(Math.sin((2 * Math.PI * freq * i) / rate) * 3000), 44 + i * 2);
+  fs.writeFileSync(file, buf);
+  return file;
+}
+
+/** A small real PNG: a diagonal gradient (so cover/centering is visible in screenshots). */
+function writePng(file, w, h) {
+  const zlib = require('zlib');
+  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = (b) => { let c = 0xffffffff; for (const x of b) c = crcTable[(c ^ x) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type), data]);
+    const c = Buffer.alloc(4); c.writeUInt32BE(crc(td));
+    return Buffer.concat([len, td, c]);
+  };
+  const raw = Buffer.alloc((w * 3 + 1) * h);
+  for (let y = 0; y < h; y += 1) {
+    raw[y * (w * 3 + 1)] = 0;
+    for (let x = 0; x < w; x += 1) {
+      const o = y * (w * 3 + 1) + 1 + x * 3;
+      raw[o] = Math.round(255 * x / w); raw[o + 1] = Math.round(120 + 100 * y / h); raw[o + 2] = 200;
+    }
+  }
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+  fs.writeFileSync(file, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
+  return file;
+}
+
 (async () => {
   let { app, page } = await launch();
 
@@ -809,6 +847,132 @@ const step = (msg) => console.log(`  ✓ ${msg}`);
   await waitFor(page, (v) => parseInt(document.querySelector('#ag-year-tally .tally__row--ttp dd').textContent, 10) === v, base.yttp + 15);
   await page.evaluate((ids) => Promise.all(ids.map((id) => window.pomodoro.legacy.remove(id))), oldIds);
   step(`previous year ${lastYear}: Dashboard year list + arrows reach it (40 Pomodoros, 5 h, March), Agenda "${lastYear} in total" = 40P / English 5 h; current planner back to "so far"`);
+
+  // --- Startup sound: playlist in Settings, played once per launch, in order, skipping broken tracks
+  const mediaSrc = fs.mkdtempSync(path.join(os.tmpdir(), 'neon-media-src-'));
+  const toneA = writeWav(path.join(mediaSrc, 'Morning A.wav'), 0.5, 440);
+  const broken = path.join(mediaSrc, 'Broken.mp3');
+  fs.writeFileSync(broken, Buffer.concat([Buffer.from('ID3'), Buffer.alloc(400, 7)])); // looks like MP3, cannot be decoded
+  const toneB = writeWav(path.join(mediaSrc, 'Morning B.wav'), 0.5, 660);
+  const longTone = writeWav(path.join(mediaSrc, 'Long C.wav'), 6, 520);
+  const notes = path.join(mediaSrc, 'notes.txt');
+  fs.writeFileSync(notes, 'not audio');
+  const wallPng = writePng(path.join(mediaSrc, 'Lake view.png'), 320, 180);
+  const pickFiles = (list) => app.evaluate(({ dialog }, files) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: files });
+  }, list);
+
+  await page.click('[data-nav="settings"]');
+  assert.equal(await page.isChecked('#s-startup-on'), false, 'off by default');
+  await pickFiles([toneA, broken, notes, toneB, longTone]);
+  await page.click('#s-startup-add');
+  await waitFor(page, () => document.querySelectorAll('#s-startup-list .track').length === 4);
+  assert.deepEqual(await page.locator('#s-startup-list .track__name').allTextContents(), ['Morning A.wav', 'Broken.mp3', 'Morning B.wav', 'Long C.wav']);
+  assert.match(await page.textContent('#s-startup-error'), /"notes\.txt" is not a supported sound file/);
+  assert.equal(await page.locator('#s-startup-list .track[data-selected="true"]').count(), 4, 'new tracks are selected');
+  // deselect the long one (it stays in the playlist, visibly dimmed)
+  await page.locator('#s-startup-list .track', { hasText: 'Long C.wav' }).locator('input[type="checkbox"]').uncheck();
+  await waitFor(page, () => document.querySelector('#s-startup-list .track:last-child').dataset.selected === 'false');
+  assert.equal(await page.locator('#s-startup-list .track:last-child').evaluate((el) => getComputedStyle(el).opacity), '0.6');
+  assert.match(await page.textContent('#s-startup-count'), /3 of 4 selected/);
+  // preview: plays that one track; the alarm takes over at once
+  await page.locator('#s-startup-list .track', { hasText: 'Long C.wav' }).locator('.track__play').click();
+  await waitFor(page, () => document.querySelector('#s-startup-list .track[data-playing="true"] .track__name')?.textContent === 'Long C.wav');
+  await page.click('#s-test-sound');
+  await waitFor(page, () => !document.querySelector('#s-startup-list .track[data-playing="true"]'));
+  // switch on, every launch, volume 40
+  await page.check('#s-startup-on');
+  await page.selectOption('#s-startup-mode', 'launch');
+  await setSetting(page, '#s-startup-volume', 40);
+  await waitFor(page, () => window.pomodoro.settings.get().then((st) => st.startupSoundEnabled && st.startupSoundMode === 'launch' && st.startupSoundVolume === 40));
+  step('Startup sound playlist: 4 tracks added (notes.txt refused), one deselected and dimmed, preview stopped by the alarm, every launch at 40%');
+
+  await app.close();
+  ({ app, page } = await launch());
+  await waitFor(page, () => document.documentElement.dataset.startupSound === 'played');
+  await waitFor(page, () => (window.__startupSoundLog || []).some((e) => e.event === 'done'), null, { timeout: 15000 });
+  const playLog = await page.evaluate(() => window.__startupSoundLog.map((e) => `${e.event}:${e.name || ''}`));
+  assert.deepEqual(playLog.filter((e) => /^(start|skip|end)/.test(e)),
+    ['start:Morning A.wav', 'end:Morning A.wav', 'skip:Broken.mp3', 'start:Morning B.wav', 'end:Morning B.wav'],
+    'selected tracks in order, one at a time; the broken one skipped; the deselected one not played');
+  assert.deepEqual(await page.evaluate(() => window.pomodoro.startupSound.claim()), { play: false, reason: 'already-claimed', tracks: [] }, 'never twice in one launch');
+  step(`launch: startup playlist played automatically in order (${playLog.filter((e) => e.startsWith('start')).length} tracks, broken one skipped), only once`);
+
+  // once a day: it already played today, so the next launch is quiet
+  await page.click('[data-nav="settings"]');
+  await page.selectOption('#s-startup-mode', 'daily');
+  await waitFor(page, () => window.pomodoro.settings.get().then((st) => st.startupSoundMode === 'daily'));
+  await app.close();
+  ({ app, page } = await launch());
+  await waitFor(page, () => document.documentElement.dataset.startupSound === 'played-today');
+  assert.equal((await page.evaluate(() => window.__startupSoundLog || [])).length, 0);
+  step('"Once a day": not played again on the same day (persisted across restarts)');
+
+  // remove a track: its copy goes, the original stays
+  await page.click('[data-nav="settings"]');
+  const mediaDir = path.join(dataDir, 'media', 'startup-sounds');
+  const beforeRemove = fs.readdirSync(mediaDir).length;
+  await page.locator('#s-startup-list .track', { hasText: 'Broken.mp3' }).locator('.track__remove').click();
+  await page.click('#confirm-ok');
+  await waitFor(page, () => document.querySelectorAll('#s-startup-list .track').length === 3);
+  assert.equal(fs.readdirSync(mediaDir).length, beforeRemove - 1);
+  assert.ok(fs.existsSync(broken), 'the original file is untouched');
+  await page.uncheck('#s-startup-on');
+  step('track removed (its stored copy deleted, the original kept); startup sound switched off');
+
+  // --- Focus wallpaper: preview, apply, Focus page only, darken, off, persists, remove
+  await pickFiles([notes]);
+  await page.click('#s-wall-pick');
+  await waitFor(page, () => !document.querySelector('#s-wall-error').hidden);
+  assert.match(await page.textContent('#s-wall-error'), /not a supported image file/);
+  await pickFiles([wallPng]);
+  await page.click('#s-wall-pick');
+  await waitFor(page, () => document.querySelector('#s-wall-preview').dataset.state === 'pending');
+  assert.match(await page.textContent('#s-wall-caption'), /Preview: Lake view\.png/);
+  assert.equal(await page.evaluate(() => window.pomodoro.wallpaper.get()), null, 'a preview is not applied');
+  await page.click('#s-wall-apply');
+  await waitFor(page, () => document.querySelector('#s-wall-preview').dataset.state === 'current');
+  assert.equal(await page.isChecked('#s-wall-on'), true, 'applying switches it on');
+  await setSetting(page, '#s-wall-dim', 40);
+
+  const mainBg = () => page.evaluate(() => {
+    const m = document.querySelector('#main');
+    return { on: m.classList.contains('has-wallpaper'), img: getComputedStyle(m).backgroundImage, size: getComputedStyle(m).backgroundSize, dim: m.style.getPropertyValue('--wallpaper-dim') };
+  });
+  await page.click('[data-nav="focus"]');
+  await waitFor(page, () => document.querySelector('#main').classList.contains('has-wallpaper'));
+  let bg = await mainBg();
+  assert.match(bg.img, /app:\/\/local\/media\/wallpapers\/[0-9a-f-]+\.png/);
+  assert.equal(bg.size, 'cover, cover, cover');
+  assert.equal(bg.dim, '0.4');
+  assert.ok(await page.isVisible('#btn-main'), 'timer controls still visible');
+  await shot(page, '16-focus-wallpaper');
+  for (const other of ['dashboard', 'agenda', 'tasks', 'goals', 'history', 'settings']) {
+    await page.click(`[data-nav="${other}"]`);
+    bg = await mainBg();
+    assert.equal(bg.on, false, `no wallpaper on ${other}`);
+    assert.equal(bg.img, 'none', `${other} background untouched`);
+  }
+  await page.uncheck('#s-wall-on');
+  await page.click('[data-nav="focus"]');
+  await page.waitForTimeout(200);
+  assert.equal((await mainBg()).on, false, 'switched off');
+  await page.click('[data-nav="settings"]');
+  await page.check('#s-wall-on');
+  await app.close();
+  ({ app, page } = await launch());
+  await waitFor(page, () => document.querySelector('#main').classList.contains('has-wallpaper'));
+  step('Focus wallpaper: refused .txt, previewed, applied, cover + 40% darken on Focus only (6 other pages untouched), switch off/on, kept after restart');
+
+  await page.click('[data-nav="settings"]');
+  await page.click('#s-wall-remove');
+  await page.click('#confirm-ok');
+  await waitFor(page, () => document.querySelector('#s-wall-preview').dataset.state === 'none');
+  assert.deepEqual(fs.readdirSync(path.join(dataDir, 'media', 'wallpapers')), [], 'its stored copy is deleted');
+  assert.ok(fs.existsSync(wallPng));
+  await page.click('[data-nav="focus"]');
+  assert.equal((await mainBg()).on, false);
+  step('wallpaper removed: Focus back to normal, stored copy deleted, original kept');
 
   // everything persists after a restart
   await app.close();

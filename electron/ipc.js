@@ -130,6 +130,66 @@ function registerIpc(svc, { getWindow, dbPath, onSettingsChanged, startupInfo })
   handle('notes:save', (_e, date, body) => { const n = notesRepo.save(date, body); dataChanged(); return n; });
   handle('notes:delete', (_e, date) => { const ok = notesRepo.delete(date); dataChanged(); return ok; });
 
+  // ---- startup sound (playlist) & Focus wallpaper
+  // Files are picked with the system dialog here, copied into the media folder
+  // by core/media-store.js, and referenced from SQLite (media_files).
+  const { MEDIA_KINDS } = require('../core/media-store');
+  const exts = (kind) => Object.keys(MEDIA_KINDS[kind].types);
+  let startupClaimed = false; // the startup playlist is handed out once per launch
+  let wallpaperPreview = null; // { token, name } of the image being previewed
+
+  handle('startup:list', () => svc.startupTracks());
+  handle('startup:add', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(getWindow(), {
+      title: 'Add startup sounds',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Audio', extensions: exts('startup_sound') }],
+    });
+    if (canceled || !filePaths || !filePaths.length) return { added: [], rejected: [], tracks: svc.startupTracks() };
+    return svc.addStartupTracks(filePaths);
+  });
+  handle('startup:remove', (_e, id) => svc.removeStartupTrack(id));
+  handle('startup:select', (_e, id, selected) => { svc.mediaRepo.setSelected(id, selected === true); return svc.startupTracks(); });
+  handle('startup:move', (_e, id, dir) => { svc.mediaRepo.move(id, Number(dir) < 0 ? -1 : 1); return svc.startupTracks(); });
+  // Called by the window at start-up. Only the first call of this launch can
+  // play; a reloaded window gets { play: false, reason: 'already-claimed' }.
+  handle('startup:claim', () => {
+    if (startupClaimed) return { play: false, reason: 'already-claimed', tracks: [] };
+    startupClaimed = true;
+    return svc.startupPlan();
+  });
+  handle('startup:played', () => svc.markStartupPlayed());
+
+  handle('wallpaper:get', () => svc.wallpaperInfo());
+  handle('wallpaper:pick', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(getWindow(), {
+      title: 'Choose a Focus wallpaper',
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: exts('wallpaper') }],
+    });
+    if (canceled || !filePaths || !filePaths[0]) return null;
+    if (wallpaperPreview) svc.discardWallpaperPreview(wallpaperPreview.token);
+    const staged = svc.stageWallpaper(filePaths[0]);
+    wallpaperPreview = { token: staged.token, name: staged.name };
+    return staged;
+  });
+  handle('wallpaper:apply', () => {
+    if (!wallpaperPreview) throw new Error('Choose an image first.');
+    const { token, name } = wallpaperPreview;
+    wallpaperPreview = null;
+    const info = svc.applyWallpaper(token, name); // also switches the wallpaper on
+    const st = settingsRepo.getAll();
+    onSettingsChanged(st);
+    broadcast('settings:changed', st);
+    return info;
+  });
+  handle('wallpaper:discard', () => {
+    if (wallpaperPreview) svc.discardWallpaperPreview(wallpaperPreview.token);
+    wallpaperPreview = null;
+    return true;
+  });
+  handle('wallpaper:remove', () => svc.removeWallpaper());
+
   // ---- legacy data (weekly totals from paper planners)
   handle('legacy:list', (_e, year) => svc.legacyList(year === undefined || year === null ? undefined : year));
   handle('legacy:weeks', (_e, year) => svc.legacyWeeks(year));

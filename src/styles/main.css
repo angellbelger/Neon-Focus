@@ -473,3 +473,18 @@ fieldset.stack legend { padding: 0; margin-bottom: 8px; }
   letter-spacing: 0.06em; text-transform: uppercase;
 }
 .legacy-mark--inline { margin-right: 6px; vertical-align: 1px; }
+
+/* ---------------------------------------------------------------- Focus wallpaper
+   Only while the Focus page is on screen (wallpaper.js adds .has-wallpaper to
+   <main> for that page alone). The image covers the area, centred, under a
+   dark veil (Settings → Darken) plus a soft extra shade behind the dial. */
+main.has-wallpaper {
+  background-color: var(--void);
+  background-image:
+    radial-gradient(ellipse 55% 60% at 50% 42%, rgba(5, 6, 11, calc(var(--wallpaper-dim, 0.55) * 0.45)), transparent 72%),
+    linear-gradient(rgba(5, 6, 11, var(--wallpaper-dim, 0.55)), rgba(5, 6, 11, var(--wallpaper-dim, 0.55))),
+    var(--wallpaper-image);
+  background-size: cover, cover, cover;
+  background-position: center, center, center;
+  background-repeat: no-repeat;
+}

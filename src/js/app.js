@@ -11,6 +11,8 @@ import { initGoals } from './goals.js';
 import { initHistory } from './history.js';
 import { initSettings, applyAppearance } from './settings.js';
 import { initLegacy } from './legacy.js';
+import { initStartupSound, playStartupSound } from './startup-sound.js';
+import { initWallpaper } from './wallpaper.js';
 import { playAlarm, unlockAudio } from './audio.js';
 import { MODE_LABEL } from './format.js';
 
@@ -29,6 +31,8 @@ async function boot() {
   initHistory();
   initSettings();
   initLegacy();
+  initStartupSound();
+  initWallpaper();
   initNavigation();
 
   store.setSettings(settings);
@@ -58,6 +62,12 @@ async function boot() {
     const d = new Date().getDate();
     if (d !== day) { day = d; store.refreshToday().catch(() => {}); }
   }, 30000);
+
+  // Startup sound: once per launch, after everything above is ready. The main
+  // process decides (off / once a day / every launch) and never hands it out twice.
+  playStartupSound().then((plan) => {
+    document.documentElement.dataset.startupSound = plan && plan.play ? 'played' : (plan && plan.reason) || 'none';
+  });
 
   const unlock = () => { unlockAudio(); window.removeEventListener('pointerdown', unlock); window.removeEventListener('keydown', unlock); };
   window.addEventListener('pointerdown', unlock);

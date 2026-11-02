@@ -55,6 +55,22 @@ contextBridge.exposeInMainWorld('pomodoro', {
     update: (id, tag) => call('tags:update', id, tag),
     remove: (id) => call('tags:delete', id),
   },
+  startupSound: {
+    list: () => call('startup:list'),
+    add: () => call('startup:add'),
+    remove: (id) => call('startup:remove', id),
+    select: (id, selected) => call('startup:select', id, selected),
+    move: (id, dir) => call('startup:move', id, dir),
+    claim: () => call('startup:claim'),
+    played: () => call('startup:played'),
+  },
+  wallpaper: {
+    get: () => call('wallpaper:get'),
+    pick: () => call('wallpaper:pick'),
+    apply: () => call('wallpaper:apply'),
+    discard: () => call('wallpaper:discard'),
+    remove: () => call('wallpaper:remove'),
+  },
   legacy: {
     list: (year) => call('legacy:list', year),
     weeks: (year) => call('legacy:weeks', year),

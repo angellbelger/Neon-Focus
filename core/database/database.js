@@ -18,7 +18,7 @@ const initSqlJs = require('sql.js');
 
 const { localDate } = require('../dates');
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 /**
  * Ordered schema migrations. Each runs once, inside a transaction.
@@ -41,6 +41,7 @@ const MIGRATIONS = [
     },
   },
   { version: 4, file: path.join('migrations', '004-legacy-data.sql') },
+  { version: 5, file: path.join('migrations', '005-media.sql') },
 ];
 
 /** Error with a message meant for the user (bad or incompatible import file). */

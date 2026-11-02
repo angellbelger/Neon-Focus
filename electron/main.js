@@ -35,7 +35,8 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  // stream: lets <audio> play startup sounds from app://local/media/...
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
 ]);
 
 /** URL path prefix -> directory. Anything outside these roots is refused. */
@@ -46,10 +47,14 @@ const ROUTES = [
   ['/', path.join(ROOT, 'src')],
 ];
 
+/** Startup sounds and the Focus wallpaper: copies kept next to the database. */
+let MEDIA_DIR = null;
+
 function resolveAppUrl(url) {
   const { pathname } = new URL(url);
   const decoded = decodeURIComponent(pathname);
-  for (const [prefix, dir] of ROUTES) {
+  const routes = MEDIA_DIR ? [['/media/', MEDIA_DIR], ...ROUTES] : ROUTES;
+  for (const [prefix, dir] of routes) {
     if (decoded.startsWith(prefix)) {
       const target = path.normalize(path.join(dir, decoded.slice(prefix.length) || 'index.html'));
       if (target === dir || !target.startsWith(dir + path.sep)) return null;
@@ -143,7 +148,8 @@ async function boot() {
       console.error('[app] could not copy data from the previous app name:', err);
     }
   }
-  services = await createServices({ dbPath, secondsPerMinute: SECONDS_PER_MINUTE });
+  MEDIA_DIR = path.join(app.getPath('userData'), 'media');
+  services = await createServices({ dbPath, mediaDir: MEDIA_DIR, secondsPerMinute: SECONDS_PER_MINUTE });
   const { engine } = services;
 
   protocol.handle('app', (request) => {

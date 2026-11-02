@@ -27,6 +27,13 @@ const SETTINGS_SCHEMA = {
   // Tags whose hours the Agenda shows next to TTP, by name. null = not chosen
   // yet (falls back to hoursTagId, else the tag named "English"); [] = TTP only.
   hoursTagIds:          { type: 'idList', max: 20, default: null },
+  // Startup sound: a playlist played when the app starts.
+  startupSoundEnabled:  { type: 'bool', default: false },
+  startupSoundMode:     { type: 'enum', values: ['daily', 'launch'], default: 'daily' },
+  startupSoundVolume:   { type: 'int',  min: 0, max: 100, default: 60 },
+  // Focus wallpaper (Focus page only) and how much it is darkened for readability.
+  wallpaperEnabled:     { type: 'bool', default: false },
+  wallpaperDim:         { type: 'int',  min: 0, max: 90, default: 55 },
 };
 
 function defaultSettings() {

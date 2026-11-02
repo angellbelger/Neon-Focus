@@ -311,8 +311,8 @@ test('deleting a tag keeps its legacy rows by name but they stop counting; clear
   assert.equal(svc.legacyList().length, 0);
 });
 
-test('schema v4 upgrades an older database and keeps legacy data through backup and import', async () => {
-  assert.equal(SCHEMA_VERSION, 4);
+test('the schema upgrades an older database and keeps legacy data through backup and import', async () => {
+  assert.ok(SCHEMA_VERSION >= 4);
   const { svc } = await setup();
   svc.saveLegacy({ year: 2024, week: 20, kind: 'pomodoros', value: 21 });
   const bytes = Buffer.from(svc.db.db.export());
@@ -323,7 +323,8 @@ test('schema v4 upgrades an older database and keeps legacy data through backup 
   const SQL = await initSqlJs();
   const old = new SQL.Database(bytes);
   old.run('DROP TABLE legacy_records');
-  old.run('DELETE FROM schema_version WHERE version = 4');
+  old.run('DROP TABLE media_files');
+  old.run('DELETE FROM schema_version WHERE version >= 4');
   const upgraded = await Database.prepareImport(Buffer.from(old.export()));
   assert.equal(upgraded.summary.legacy, 0);
   assert.equal(upgraded.summary.schemaVersion, 3);

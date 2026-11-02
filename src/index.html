@@ -437,6 +437,48 @@
             <p class="field__hint">Weekly totals from paper planners kept before Focus Neon (Pomodoros and hours per tag). They are added to the Agenda boxes, Activity Statistics and tag goals.</p>
           </fieldset>
 
+          <fieldset class="panel settings__group settings__group--media" aria-describedby="s-startup-hint">
+            <legend>Startup sound</legend>
+            <div class="field field--switch"><label for="s-startup-on">Play a sound when Focus Neon starts</label><input id="s-startup-on" name="startupSoundEnabled" type="checkbox" role="switch"></div>
+            <div class="field"><label for="s-startup-mode">When</label>
+              <select id="s-startup-mode" name="startupSoundMode">
+                <option value="daily">Once a day</option>
+                <option value="launch">Every launch</option>
+              </select>
+            </div>
+            <div class="field field--range"><label for="s-startup-volume">Volume</label><input id="s-startup-volume" name="startupSoundVolume" type="range" min="0" max="100" step="5"><output id="s-startup-volume-out" for="s-startup-volume">60%</output></div>
+            <div class="playlist">
+              <div class="playlist__head">
+                <span class="field__label">Playlist <span class="playlist__count" id="s-startup-count"></span></span>
+                <button class="btn btn--small btn--ghost" type="button" id="s-startup-add">Add sounds</button>
+              </div>
+              <ol class="playlist__list" id="s-startup-list" aria-label="Startup playlist"></ol>
+              <p class="playlist__empty" id="s-startup-empty">No sounds yet. Add MP3, WAV, OGG, M4A, AAC, FLAC or WebM files from your computer.</p>
+              <p class="form-error" id="s-startup-error" role="alert" hidden></p>
+            </div>
+            <p class="field__hint" id="s-startup-hint">Ticked tracks play one after another, in this order, when the app starts. "Once a day" plays them at the first launch of the day, unless a Pomodoro is already done that day. A track that can't be played is skipped. Alarms always come first: the startup sound stops when an alarm plays.</p>
+          </fieldset>
+
+          <fieldset class="panel settings__group settings__group--media" aria-describedby="s-wall-hint">
+            <legend>Focus wallpaper</legend>
+            <div class="field field--switch"><label for="s-wall-on">Show a wallpaper behind the Focus timer</label><input id="s-wall-on" name="wallpaperEnabled" type="checkbox" role="switch"></div>
+            <div class="field field--range"><label for="s-wall-dim">Darken</label><input id="s-wall-dim" name="wallpaperDim" type="range" min="0" max="90" step="5"><output id="s-wall-dim-out" for="s-wall-dim">55%</output></div>
+            <figure class="wall-preview" id="s-wall-preview" data-state="none">
+              <div class="wall-preview__img" id="s-wall-img">
+                <span class="wall-preview__dial" aria-hidden="true">25:00</span>
+              </div>
+              <figcaption class="wall-preview__caption" id="s-wall-caption">No wallpaper chosen</figcaption>
+            </figure>
+            <div class="data-actions wall-actions">
+              <button class="btn btn--small btn--ghost" type="button" id="s-wall-pick">Choose image</button>
+              <button class="btn btn--small btn--accent" type="button" id="s-wall-apply" hidden>Use this wallpaper</button>
+              <button class="btn btn--small btn--ghost" type="button" id="s-wall-cancel" hidden>Cancel</button>
+              <button class="btn btn--small btn--ghost wall-actions__remove" type="button" id="s-wall-remove" hidden>Remove</button>
+            </div>
+            <p class="form-error" id="s-wall-error" role="alert" hidden></p>
+            <p class="field__hint" id="s-wall-hint">JPG, PNG or WebP, up to 25 MB. Shown only on the Focus page, filling it without stretching. Use Darken to keep the timer easy to read.</p>
+          </fieldset>
+
           <fieldset class="panel settings__group">
             <legend>Appearance</legend>
             <div class="field"><span class="field__label" id="theme-label">Accent</span>

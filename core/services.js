@@ -17,6 +17,8 @@ const { TagsRepository } = require('./database/repositories/tags-repository');
 const { NotesRepository } = require('./database/repositories/notes-repository');
 const { GoalsRepository } = require('./database/repositories/goals-repository');
 const { LegacyRepository } = require('./database/repositories/legacy-repository');
+const { MediaRepository } = require('./database/repositories/media-repository');
+const { MediaStore } = require('./media-store');
 const {
   localDate, cleanDate, startOfLocalDate, addDaysToDate, weekRange, weeksInYear, weekOfDate,
 } = require('./dates');
@@ -31,7 +33,7 @@ function csvCell(v) {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinute = 60, engineOptions = {} } = {}) {
+async function createServices({ dbPath, mediaDir = null, clock = () => Date.now(), secondsPerMinute = 60, engineOptions = {} } = {}) {
   const db = await Database.open(dbPath);
   const settingsRepo = new SettingsRepository(db, clock);
   const tasksRepo = new TasksRepository(db, clock);
@@ -42,6 +44,9 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
   const notesRepo = new NotesRepository(db, clock);
   const goalsRepo = new GoalsRepository(db, clock);
   const legacyRepo = new LegacyRepository(db, clock);
+  const mediaRepo = new MediaRepository(db, clock);
+  const media = new MediaStore(mediaDir);
+  try { media.cleanPending('wallpaper'); } catch (_) { /* best effort */ }
   const engine = new TimerEngine({
     db, stateRepo, sessionsRepo, tasksRepo, settingsRepo, clock, secondsPerMinute, ...engineOptions,
   });
@@ -525,6 +530,114 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
     return { safetyBackup, summary: prepared.summary };
   }
 
+  // ------------------------------------------------------------ startup sound & Focus wallpaper
+
+  function trackView(r) {
+    const missing = !media.exists('startup_sound', r.stored_name);
+    return {
+      id: r.id, name: r.original_name, bytes: r.bytes, mime: r.mime, selected: r.selected, missing,
+      url: missing ? null : media.url('startup_sound', r.stored_name),
+    };
+  }
+
+  /** The startup playlist in playback order; a track whose file is gone is flagged, not dropped. */
+  function startupTracks() {
+    return mediaRepo.list('startup_sound').map(trackView);
+  }
+
+  /** Copies picked audio files into the playlist. Bad files are skipped with a reason; the rest are added. */
+  function addStartupTracks(paths = []) {
+    const added = [];
+    const rejected = [];
+    for (const p of paths) {
+      let stored = null;
+      try {
+        stored = media.importFile('startup_sound', p);
+        added.push(trackView(mediaRepo.addTrack(stored)));
+      } catch (err) {
+        if (stored) media.remove('startup_sound', stored.storedName); // copied but not recorded
+        rejected.push({ name: path.basename(String(p)), reason: err.message });
+      }
+    }
+    return { added, rejected, tracks: startupTracks() };
+  }
+
+  function removeStartupTrack(id) {
+    const r = mediaRepo.get(id);
+    if (!r || r.kind !== 'startup_sound') throw new Error('That track is no longer in the playlist.');
+    mediaRepo.delete(r.id);
+    media.remove('startup_sound', r.stored_name); // only this track's own copy
+    return startupTracks();
+  }
+
+  const STARTUP_KEY = 'startupSoundLastPlayedOn';
+
+  /**
+   * Decides whether the startup playlist plays now. Settings → Startup sound:
+   * off -> never; "every launch" -> always; "once a day" -> only if it has
+   * not played today and no Pomodoro has been completed today (local day).
+   */
+  function startupPlan() {
+    const s = settingsRepo.getAll();
+    const no = (reason) => ({ play: false, reason, tracks: [], volume: s.startupSoundVolume });
+    if (!s.startupSoundEnabled) return no('off');
+    const tracks = startupTracks().filter((t) => t.selected && !t.missing);
+    if (!tracks.length) return no('no-tracks');
+    const day = localDate(clock());
+    if (s.startupSoundMode === 'daily') {
+      if (stateRepo.getValue(STARTUP_KEY, null) === day) return no('played-today');
+      if (today().pomodoros > 0) return no('pomodoro-done-today');
+    }
+    return { play: true, reason: s.startupSoundMode, tracks, volume: s.startupSoundVolume, day };
+  }
+
+  /** Called when the first startup track actually starts playing. */
+  function markStartupPlayed() {
+    const day = localDate(clock());
+    stateRepo.setValue(STARTUP_KEY, day);
+    return day;
+  }
+
+  function wallpaperInfo() {
+    const r = mediaRepo.list('wallpaper')[0];
+    if (!r) return null;
+    const missing = !media.exists('wallpaper', r.stored_name);
+    return { id: r.id, name: r.original_name, bytes: r.bytes, missing, url: missing ? null : media.url('wallpaper', r.stored_name) };
+  }
+
+  /** Copies a picked image as a preview (not applied yet). */
+  function stageWallpaper(filePath) {
+    const stored = media.importFile('wallpaper', filePath, { pending: true });
+    return { token: stored.storedName, name: stored.originalName, bytes: stored.bytes, url: media.url('wallpaper', stored.storedName) };
+  }
+
+  /** Applies a previewed image: it replaces the current wallpaper, whose copy is then deleted. */
+  function applyWallpaper(token, originalName) {
+    const pendingPath = media.pathFor('wallpaper', token);
+    if (!pendingPath || !/^pending-/.test(token)) throw new Error('Choose an image first.');
+    const bytes = fs.statSync(pendingPath).size;
+    const finalName = media.promote('wallpaper', token);
+    const ext = finalName.split('.').pop();
+    const mime = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }[ext];
+    const previous = mediaRepo.setWallpaper({ storedName: finalName, originalName: String(originalName || finalName).slice(0, 255), mime, bytes });
+    if (previous && previous.stored_name !== finalName) media.remove('wallpaper', previous.stored_name);
+    settingsRepo.update({ wallpaperEnabled: true });
+    return wallpaperInfo();
+  }
+
+  function discardWallpaperPreview(token) {
+    if (!/^pending-/.test(token || '')) return false;
+    return media.remove('wallpaper', token);
+  }
+
+  function removeWallpaper() {
+    const r = mediaRepo.list('wallpaper')[0];
+    if (!r) return null;
+    mediaRepo.delete(r.id);
+    media.remove('wallpaper', r.stored_name);
+    return null;
+  }
+
   /** Deletes all sessions, tasks, tags, notes, goals and timer state. Settings are kept. */
   function clearAllData() {
     db.transaction(() => {
@@ -550,6 +663,8 @@ async function createServices({ dbPath, clock = () => Date.now(), secondsPerMinu
   return {
     db, settingsRepo, tasksRepo, sessionsRepo, stateRepo, stepsRepo, tagsRepo, notesRepo, goalsRepo, legacyRepo, engine,
     legacyList, legacyWeeks, saveLegacy, legacyTotals, productivityYears, firstRecordAt,
+    mediaRepo, media, startupTracks, addStartupTracks, removeStartupTrack, startupPlan, markStartupPlayed,
+    wallpaperInfo, stageWallpaper, applyWallpaper, discardWallpaperPreview, removeWallpaper,
     report, today, exportCsv, clearAllData, listTasks, decorateTasks, prepareImport, applyImport,
     activityStats, activityDetail, tagSeconds, hoursTag, hoursTags, agendaDays, agendaYears, yearOpeningNotes, listGoals, goalYears,
   };

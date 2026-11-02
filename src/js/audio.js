@@ -2,6 +2,8 @@
 // fail). The window is created with autoplay allowed and background throttling
 // off, so alarms play even when the app is hidden in the tray.
 
+import { stopStartupAudio } from './startup-sound.js';
+
 let ctx = null;
 
 function context() {
@@ -78,6 +80,8 @@ const SOUNDS = {
  * @param {{sound:string, volume:number}} opts volume 0..100
  */
 export async function playAlarm({ sound = 'chime', volume = 70 } = {}) {
+  // Alarms take priority: a startup sound or a preview never plays over them.
+  stopStartupAudio();
   try {
     const c = context();
     if (c.state === 'suspended') await c.resume();

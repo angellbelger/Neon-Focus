@@ -16,6 +16,8 @@ A desktop Pomodoro timer and productivity tracker. It has a neon interface, a SQ
 - **Steps**: break a task into steps, Microsoft To Do style. Click **+ Add steps** under a task, type, and press Enter to add the next one (Esc closes the field). Tick a step to complete it, click its name to rename it, and use × to delete it. "5 of 6 steps" with a small bar shows progress and collapses or expands the list. Steps are saved with their task and deleted with it.
 - **Dashboard**: day, week, month and year views, with arrows to move through past periods. It shows key figures, three interactive line charts (focus time, completed Pomodoros, and a comparison with the previous period) and clear empty states.
 - **History**: every completed, interrupted and skipped session with exact start and end times. You can filter by date, type and status.
+- **Startup sound** (Settings → Startup sound): a playlist of your own audio files (MP3, WAV, OGG, M4A, AAC, FLAC, WebM; up to 50 MB each) played automatically when the app starts. Tick the tracks to play (unticked ones stay in the list, dimmed), preview any track, reorder with ↑/↓, remove with ✕. **Once a day** plays at the first launch of each day, until the first Pomodoro of the day is done (remembered across restarts, reset at midnight); **Every launch** plays at every start. Ticked tracks play one after another, never together, at most once per launch; a missing or unplayable file is skipped. Alarms come first: the startup sound (and any preview) stops when an alarm plays. Master switch and volume included.
+- **Focus wallpaper** (Settings → Focus wallpaper): your own image (JPG, PNG or WebP, up to 25 MB) behind the Focus page only. Choose an image to preview it, then **Use this wallpaper**; choose another to replace it, **Remove** to go back to normal, or switch it off and on. It covers the area without stretching, stays centred, and the **Darken** slider (0–90 %) keeps the timer readable. Every other page keeps its normal background.
 - **Settings**: durations, cycle length, auto-start, alarm, daily goal, week start, accent colour, glow, reduced motion and a menu-bar countdown. Data tools let you export to CSV, back up the database, **import a backup**, show the database file and delete everything.
 - **Menu bar / tray**: shows the live countdown (on macOS) and has quick controls. Closing the window keeps the timer running.
 
@@ -68,7 +70,7 @@ Neither of these touches your real data. They use their own folders in your syst
 ## Tests
 
 ```bash
-npm test             # 68 unit tests: timer rules, duplicates, lock/sleep, restart, statistics, DST, SQL injection, steps, import, migrations, tags, TTP and tag hours, goals, legacy data, calendar weeks
+npm test             # 75 unit tests: timer rules, duplicates, lock/sleep, restart, statistics, DST, SQL injection, steps, import, migrations, tags, TTP and tag hours, goals, legacy data, calendar weeks, startup sound and wallpaper files
 npm run test:e2e     # drives the real app: sessions, alarms, tasks, history, dashboard, restart, crash recovery
 ```
 
@@ -95,6 +97,8 @@ A single SQLite file named `focus-neon.sqlite` in the app's data folder:
 | macOS | `~/Library/Application Support/Focus Neon/` |
 | Windows | `%APPDATA%\Focus Neon\` |
 | Linux | `~/.config/Focus Neon/` |
+
+Startup sounds and the Focus wallpaper are copied into a `media` folder next to it (`media/startup-sounds/`, `media/wallpapers/`), each under a random name; the database keeps only the reference (table `media_files`) and your settings. Removing a track or the wallpaper deletes only its own copy; the file you originally picked is never touched. A copy that has gone missing is shown as missing and skipped, never a crash. A database backup does not include these media files.
 
 **Settings → Data → Show database file** opens the folder. The file is a standard SQLite 3 database, so DB Browser for SQLite, `sqlite3` and Python can all open it. Every write is saved atomically: the app writes a temporary file, flushes it to disk, then renames it. A crash therefore can't leave a half-written database. If the file is ever damaged, the app keeps it as `.corrupt-<timestamp>`, starts a fresh one and tells you.
 
@@ -123,6 +127,7 @@ The app used to be called Neon Pomodoro and kept its data in a `Neon Pomodoro` f
 | `task_tags` | task ↔ tag links (deleted with the task or tag) |
 | `session_tags` | `session_id → sessions, tag_id → tags ON DELETE SET NULL, tag_name` — the tags a session counted towards, copied from its task when it was recorded |
 | `daily_notes` | `note_date (YYYY-MM-DD, primary key), body` |
+| `media_files` | startup-sound tracks and the Focus wallpaper: `kind, stored_name (the copy in media/), original_name, mime, bytes, position (playlist order), selected`; one wallpaper at most |
 | `legacy_records` | weekly totals from paper planners: `year, week, kind (pomodoros/tag_hours), tag_id, tag_name, value (Pomodoros or seconds)`; one per year/week/metric(/tag) (unique index); `tag_id` becomes NULL if the tag is deleted (the name is kept, the hours stop counting) |
 | `goals` | `year, title, action_plan, start_month, target_date, progress_mode (milestones/tasks/activity/manual), manual_progress, tag_id, target_minutes, completed_at` |
 | `goal_milestones` | `goal_id → goals ON DELETE CASCADE, title, status (pending/done/dropped), done_on, position` |
@@ -162,7 +167,7 @@ The timer runs in Electron's main process, not in the page. Switching pages, clo
 
 ```
 electron/        main.js (window, app:// protocol, tray, sleep), preload.js (safe API), ipc.js, tray.js, legacy-data.js
-core/            timer-engine.js, stats.js, services.js, settings-schema.js
+core/            timer-engine.js, stats.js, services.js, settings-schema.js, media-store.js (startup sounds and wallpaper files)
 core/database/   database.js (migrations, import validation), schema.sql, migrations/, repositories/ (settings, tasks, steps, sessions, state, tags, notes, goals, legacy)
 src/             index.html, styles/*.css, js/*.js (app, navigation, timer, dashboard, charts, tasks, history, settings, audio, store, ui, format)
 assets/icons/    app and tray icons
