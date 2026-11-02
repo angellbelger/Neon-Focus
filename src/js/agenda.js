@@ -190,6 +190,18 @@ function addControls(day) {
         h('span', { 'aria-hidden': 'true' }, '+'), 'Note'));
 }
 
+/** Annual reminders (birthdays, anniversaries) on this date: the last lines of the day. */
+function annualReminders(day, full) {
+  if (!day.reminders || !day.reminders.length) return null;
+  return h('ul.ag-reminders', { 'aria-label': `Annual reminders on ${full}` }, day.reminders.map((r) => h('li.ag-reminder', {
+    dataset: { id: String(r.id) },
+    title: r.notes ? `${r.title}\n${r.notes}` : `${r.title} (every year)`,
+  },
+  h('span.ag-reminder__icon', { 'aria-hidden': 'true' }, '✦'),
+  h('span.ag-reminder__title', {}, r.title),
+  h('span.ag-reminder__tag', {}, r.month === 2 && r.day === 29 && !day.date.endsWith('-02-29') ? 'every year · 29 Feb' : 'every year'))));
+}
+
 function dayRow(day, tags) {
   const ms = dateKeyToMs(day.date);
   const d = new Date(ms);
@@ -210,7 +222,8 @@ function dayRow(day, tags) {
         ? h('ul.ag-tasks', { 'aria-label': `Tasks on ${full}` }, day.tasks.map(taskLine))
         : null,
       noteBlock(day),
-      addControls(day)),
+      addControls(day),
+      annualReminders(day, full)),
     h('dl.ag-day__stats', { 'aria-label': `Productivity on ${full}` },
       h('div', {}, h('dt', { title: 'Total Pomodoro' }, 'TTP'), h('dd', {}, String(day.ttp))),
       // Only the selected tags that have time that day, so a day never fills up with "0 min" lines.

@@ -324,6 +324,7 @@ test('the schema upgrades an older database and keeps legacy data through backup
   const old = new SQL.Database(bytes);
   old.run('DROP TABLE legacy_records');
   old.run('DROP TABLE media_files');
+  old.run('DROP TABLE reminders');
   old.run('DELETE FROM schema_version WHERE version >= 4');
   const upgraded = await Database.prepareImport(Buffer.from(old.export()));
   assert.equal(upgraded.summary.legacy, 0);

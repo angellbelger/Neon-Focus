@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="styles/settings.css">
   <link rel="stylesheet" href="styles/agenda.css">
   <link rel="stylesheet" href="styles/goals.css">
+  <link rel="stylesheet" href="styles/reminders.css">
   <link rel="stylesheet" href="styles/glass.css">
   <script src="js/env-check.js"></script>
   <script src="vendor/chartjs/chart.umd.js" defer></script>
@@ -47,7 +48,10 @@
         <li><button class="rail__item" data-nav="dashboard" aria-keyshortcuts="Control+5">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 18.5l5-6 4 3.5 7.5-9"/><path d="M3.5 21h17"/></svg>
           <span>Dashboard</span></button></li>
-        <li><button class="rail__item" data-nav="history" aria-keyshortcuts="Control+6">
+        <li><button class="rail__item" data-nav="reminders" aria-keyshortcuts="Control+6">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>
+          <span>Reminders</span></button></li>
+        <li><button class="rail__item" data-nav="history" aria-keyshortcuts="Control+7">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4.5v3.8h3.8"/><path d="M12 8v4.3l2.8 1.7"/></svg>
           <span>History</span></button></li>
       </ul>
@@ -57,7 +61,7 @@
         <span class="rail__mini-mode" id="rail-mini-mode">Focus</span>
       </button>
 
-      <button class="rail__item rail__item--settings" data-nav="settings" aria-keyshortcuts="Control+7">
+      <button class="rail__item rail__item--settings" data-nav="settings" aria-keyshortcuts="Control+8">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
         <span>Settings</span></button>
     </nav>
@@ -231,6 +235,14 @@
             <button class="icon-btn" id="dash-next" aria-label="Next period"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button class="btn btn--small btn--ghost" id="dash-today">Current</button>
             <label class="dash-year"><span class="visually-hidden">Year</span><select id="dash-year" title="Jump to a year with records"></select></label>
+            <div class="tag-filter" id="dash-tag-filter">
+              <button class="btn btn--small btn--ghost tag-filter__btn" type="button" id="dash-tags-btn" aria-haspopup="true" aria-expanded="false" aria-controls="dash-tags-menu" title="Show statistics for one or more tags">
+                <span class="tag-filter__dots" id="dash-tags-dots" aria-hidden="true"></span>
+                <span class="tag-filter__label" id="dash-tags-label">All tags</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
+              </button>
+              <div class="tag-filter__menu" id="dash-tags-menu" role="group" aria-label="Filter statistics by tag" hidden></div>
+            </div>
           </div>
         </header>
 
@@ -242,6 +254,7 @@
 
         <div class="dash-body" id="dash-body">
           <div class="kpis" id="dash-kpis"></div>
+          <p class="dash-filter-note" id="dash-filter-note" hidden></p>
           <p class="dash-legacy" id="dash-legacy" hidden></p>
           <div class="charts">
             <figure class="panel chart-panel chart-panel--wide">
@@ -387,6 +400,43 @@
         <button class="btn btn--ghost load-more" id="history-more" hidden>Show more</button>
       </section>
 
+      <!-- ============================================================ REMINDERS -->
+      <section class="page page--reminders" data-page="reminders" aria-labelledby="reminders-heading" hidden>
+        <header class="page__head">
+          <h1 id="reminders-heading">Reminders</h1>
+          <div class="segmented rem-views" role="radiogroup" aria-label="Reminder type">
+            <button type="button" role="radio" data-rem-view="once" aria-checked="true">Upcoming events <span class="rem-count" id="rem-count-once"></span></button>
+            <button type="button" role="radio" data-rem-view="annual" aria-checked="false">Annual reminders <span class="rem-count" id="rem-count-annual"></span></button>
+          </div>
+          <button class="btn btn--accent rem-new" type="button" id="rem-new"><span aria-hidden="true">+</span> New reminder</button>
+        </header>
+
+        <div class="rem-pane" id="rem-once">
+          <section class="rem-group" aria-labelledby="rem-upcoming-title">
+            <h2 class="rem-group__title" id="rem-upcoming-title">Upcoming</h2>
+            <ol class="rem-list" id="rem-upcoming"></ol>
+            <p class="rem-empty" id="rem-upcoming-empty">Nothing coming up. Add a meeting, appointment or deadline with <strong>New reminder</strong>.</p>
+          </section>
+          <section class="rem-group" aria-labelledby="rem-past-title" id="rem-past-group">
+            <h2 class="rem-group__title" id="rem-past-title">Past <span class="rem-group__hint">not marked as done</span></h2>
+            <ol class="rem-list" id="rem-past"></ol>
+          </section>
+          <section class="rem-group" aria-labelledby="rem-done-title" id="rem-done-group">
+            <h2 class="rem-group__title" id="rem-done-title">Completed</h2>
+            <ol class="rem-list" id="rem-done"></ol>
+          </section>
+        </div>
+
+        <div class="rem-pane" id="rem-annual" hidden>
+          <section class="rem-next" id="rem-next" aria-labelledby="rem-next-title">
+            <h2 class="rem-group__title" id="rem-next-title">Coming up</h2>
+            <ol class="rem-next__list" id="rem-next-list"></ol>
+          </section>
+          <div class="rem-months" id="rem-months"></div>
+          <p class="rem-empty" id="rem-annual-empty">No annual reminders yet. Birthdays and anniversaries you add here come back every year and show in the Agenda on their day.</p>
+        </div>
+      </section>
+
       <!-- ============================================================ SETTINGS -->
       <section class="page page--settings" data-page="settings" aria-labelledby="settings-heading" hidden>
         <header class="page__head">
@@ -510,7 +560,7 @@
             </div>
           </fieldset>
         </form>
-        <p class="shortcuts">Shortcuts: <kbd>Space</kbd> start or pause, <kbd>R</kbd> reset, <kbd>S</kbd> skip, <kbd>Ctrl</kbd>+<kbd>1</kbd>–<kbd>7</kbd> switch pages.</p>
+        <p class="shortcuts">Shortcuts: <kbd>Space</kbd> start or pause, <kbd>R</kbd> reset, <kbd>S</kbd> skip, <kbd>Ctrl</kbd>+<kbd>1</kbd>–<kbd>8</kbd> switch pages.</p>
       </section>
 
       <!-- Shared footer: shown under every page -->
@@ -587,6 +637,34 @@
       <p class="form-error" id="tag-manager-error" role="alert" hidden></p>
       <div class="dialog__actions">
         <button class="btn btn--ghost" value="close">Done</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Reminder editor (one-time or annual) -->
+  <dialog class="dialog dialog--wide" id="rem-editor" aria-labelledby="rem-editor-title">
+    <form method="dialog" class="dialog__inner" id="rem-form" novalidate>
+      <h2 id="rem-editor-title">New reminder</h2>
+      <div class="segmented rem-kind" role="radiogroup" aria-label="Kind of reminder">
+        <button type="button" role="radio" data-rem-kind="once" aria-checked="true">One-time event</button>
+        <button type="button" role="radio" data-rem-kind="annual" aria-checked="false">Every year</button>
+      </div>
+      <p class="dialog__sub rem-kind-hint" id="rem-kind-hint">A meeting, appointment, interview or deadline. It happens once.</p>
+      <label class="stack">Title<input name="title" type="text" maxlength="200" required placeholder="e.g. Project meeting"></label>
+      <div class="stack-row rem-fields--once">
+        <label class="stack">Date<input name="date" type="date"></label>
+        <label class="stack"><span>Time <small class="rem-opt">optional</small></span><input name="time" type="time"></label>
+      </div>
+      <label class="stack rem-fields--once"><span>Link <small class="rem-opt">optional, e.g. Google Meet, Teams or Zoom</small></span><input name="link" type="url" maxlength="2000" placeholder="https://meet.google.com/…"></label>
+      <div class="stack-row rem-fields--annual" hidden>
+        <label class="stack">Day<select name="day"></select></label>
+        <label class="stack">Month<select name="month"></select></label>
+      </div>
+      <label class="stack"><span>Notes <small class="rem-opt">optional</small></span><textarea name="notes" rows="3" maxlength="2000"></textarea></label>
+      <p class="form-error" id="rem-error" role="alert" hidden></p>
+      <div class="dialog__actions">
+        <button class="btn btn--ghost" type="button" id="rem-cancel">Cancel</button>
+        <button class="btn btn--accent" type="submit" id="rem-save">Save reminder</button>
       </div>
     </form>
   </dialog>

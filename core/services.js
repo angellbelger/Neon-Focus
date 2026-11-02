@@ -18,6 +18,7 @@ const { NotesRepository } = require('./database/repositories/notes-repository');
 const { GoalsRepository } = require('./database/repositories/goals-repository');
 const { LegacyRepository } = require('./database/repositories/legacy-repository');
 const { MediaRepository } = require('./database/repositories/media-repository');
+const { RemindersRepository, annualDate, onceStatus } = require('./database/repositories/reminders-repository');
 const { MediaStore } = require('./media-store');
 const {
   localDate, cleanDate, startOfLocalDate, addDaysToDate, weekRange, weeksInYear, weekOfDate,
@@ -45,30 +46,66 @@ async function createServices({ dbPath, mediaDir = null, clock = () => Date.now(
   const goalsRepo = new GoalsRepository(db, clock);
   const legacyRepo = new LegacyRepository(db, clock);
   const mediaRepo = new MediaRepository(db, clock);
+  const remindersRepo = new RemindersRepository(db, clock);
   const media = new MediaStore(mediaDir);
   try { media.cleanPending('wallpaper'); } catch (_) { /* best effort */ }
   const engine = new TimerEngine({
     db, stateRepo, sessionsRepo, tasksRepo, settingsRepo, clock, secondsPerMinute, ...engineOptions,
   });
 
-  function report({ period, anchor }) {
+  /** Valid, existing tag ids from a filter value (null / [] = all tags). */
+  function cleanTagFilter(tagIds) {
+    if (!Array.isArray(tagIds) || !tagIds.length) return null;
+    const existing = new Set(tagsRepo.list().map((t) => t.id));
+    const ids = [...new Set(tagIds.map(Number))].filter((id) => Number.isInteger(id) && existing.has(id));
+    return ids.length ? ids : null;
+  }
+
+  /**
+   * Dashboard report for a period. With `tagIds`, only sessions that counted
+   * towards one of those tags are used (the tags recorded with each session,
+   * as in Activity Statistics); a session with two selected tags counts once.
+   * Legacy data then contributes only its hours on those tags: weekly TTP
+   * totals carry no tag, so they belong to the All-tags view only.
+   */
+  function report({ period, anchor, tagIds = null }) {
     const settings = settingsRepo.getAll();
     const anchorMs = Number.isFinite(Number(anchor)) ? Number(anchor) : clock();
     const cur = stats.periodRange(period, anchorMs, settings.weekStart);
     const prev = stats.previousRange(period, anchorMs, settings.weekStart);
-    const rows = sessionsRepo.overlapping(iso(prev.start), iso(cur.end));
-    const tasksCompleted = tasksRepo.completedBetween(iso(cur.start), iso(cur.end)).length;
-    const tasksCompletedPrev = tasksRepo.completedBetween(iso(prev.start), iso(prev.end)).length;
+    const filter = cleanTagFilter(tagIds);
+    let rows = sessionsRepo.overlapping(iso(prev.start), iso(cur.end));
+    let completedTasks = (a, b) => tasksRepo.completedBetween(iso(a), iso(b)).length;
+    if (filter) {
+      const marks = filter.map(() => '?').join(',');
+      const tagged = new Set(db.all(`SELECT DISTINCT session_id FROM session_tags WHERE tag_id IN (${marks})`, filter).map((r) => r.session_id));
+      rows = rows.filter((s) => tagged.has(s.id));
+      const taskIds = new Set(db.all(`SELECT DISTINCT task_id FROM task_tags WHERE tag_id IN (${marks})`, filter).map((r) => r.task_id));
+      completedTasks = (a, b) => tasksRepo.completedBetween(iso(a), iso(b)).filter((t) => taskIds.has(t.id)).length;
+    }
+    const tasksCompleted = completedTasks(cur.start, cur.end);
+    const tasksCompletedPrev = completedTasks(prev.start, prev.end);
     // Legacy weekly totals for both periods, placed on their week's anchor day
     // (same rule as the Agenda and Activity Statistics, same week setting).
-    const legacy = legacyIn(prev.start, cur.end).map((l) => ({
+    const wanted = filter ? new Set(filter) : null;
+    const legacyRows = legacyIn(prev.start, cur.end);
+    const legacy = legacyRows.map((l) => ({
       anchorMs: startOfLocalDate(weekRange(l.year, l.week, settings.weekStart).anchor),
-      pomodoros: l.kind === 'pomodoros' ? l.value : 0,
-      seconds: l.kind === 'tag_hours' && l.tag_id ? l.value : 0,
+      pomodoros: !wanted && l.kind === 'pomodoros' ? l.value : 0,
+      seconds: l.kind === 'tag_hours' && l.tag_id && (!wanted || wanted.has(l.tag_id)) ? l.value : 0,
     }));
     const r = stats.buildReport({
       period, anchor: anchorMs, sessions: rows, legacy, tasksCompleted, tasksCompletedPrev, settings, now: clock(),
     });
+    const tagById = new Map(tagsRepo.list().map((t) => [t.id, t]));
+    r.filter = filter ? { tagIds: filter, tags: filter.map((id) => ({ id, name: tagById.get(id).name, color: tagById.get(id).color })) } : null;
+    if (filter && period !== 'day') {
+      // weekly TTP from paper planners in this period that a tag view cannot include
+      r.legacyUntagged = legacyRows.filter((l) => {
+        const a = startOfLocalDate(weekRange(l.year, l.week, settings.weekStart).anchor);
+        return l.kind === 'pomodoros' && a >= r.range.start && a < r.range.end;
+      }).reduce((n, l) => n + l.value, 0);
+    }
     r.firstSessionAt = sessionsRepo.firstStartedAt();
     r.firstRecordAt = firstRecordAt();
     r.years = productivityYears();
@@ -384,6 +421,10 @@ async function createServices({ dbPath, mediaDir = null, clock = () => Date.now(
       days.push(day);
     }
     for (const t of tasks) index.get(t.scheduled_date)?.tasks.push(t);
+    // Annual reminders (birthdays, anniversaries) for these dates, worked out
+    // from month + day for whatever year is shown; shown last in each day.
+    const annual = remindersRepo.annualBetween(first, last);
+    for (const d of days) d.reminders = (annual[d.date] || []).map((r) => ({ id: r.id, title: r.title, notes: r.notes, month: r.month, day: r.day }));
     for (const s of sessions) {
       const day = index.get(localDate(Date.parse(s.ended_at)));
       if (!day) continue;
@@ -638,6 +679,27 @@ async function createServices({ dbPath, mediaDir = null, clock = () => Date.now(
     return null;
   }
 
+  // ------------------------------------------------------------ reminders
+
+  /**
+   * Everything the Reminders page shows: one-time reminders with their status
+   * (upcoming / past / completed) and annual reminders with their next date.
+   */
+  function reminderOverview() {
+    const now = clock();
+    const today = localDate(now);
+    const year = Number(today.slice(0, 4));
+    const dayMs = 86400000;
+    const once = remindersRepo.listOnce().map((r) => ({ ...r, status: onceStatus(r, now) }));
+    const annual = remindersRepo.listAnnual().map((r) => {
+      let next = annualDate(r.month, r.day, year);
+      if (next < today) next = annualDate(r.month, r.day, year + 1);
+      const daysUntil = Math.round((startOfLocalDate(next) - startOfLocalDate(today)) / dayMs);
+      return { ...r, next, daysUntil, thisYear: annualDate(r.month, r.day, year) };
+    });
+    return { today, once, annual };
+  }
+
   /** Deletes all sessions, tasks, tags, notes, goals and timer state. Settings are kept. */
   function clearAllData() {
     db.transaction(() => {
@@ -650,6 +712,7 @@ async function createServices({ dbPath, mediaDir = null, clock = () => Date.now(
       db.run('DELETE FROM goal_milestones');
       db.run('DELETE FROM goals');
       db.run('DELETE FROM legacy_records');
+      db.run('DELETE FROM reminders');
       db.run('DELETE FROM tags');
       db.run('DELETE FROM daily_notes');
       db.run('DELETE FROM app_state');
@@ -663,6 +726,7 @@ async function createServices({ dbPath, mediaDir = null, clock = () => Date.now(
   return {
     db, settingsRepo, tasksRepo, sessionsRepo, stateRepo, stepsRepo, tagsRepo, notesRepo, goalsRepo, legacyRepo, engine,
     legacyList, legacyWeeks, saveLegacy, legacyTotals, productivityYears, firstRecordAt,
+    remindersRepo, reminderOverview,
     mediaRepo, media, startupTracks, addStartupTracks, removeStartupTrack, startupPlan, markStartupPlayed,
     wallpaperInfo, stageWallpaper, applyWallpaper, discardWallpaperPreview, removeWallpaper,
     report, today, exportCsv, clearAllData, listTasks, decorateTasks, prepareImport, applyImport,

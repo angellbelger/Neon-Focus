@@ -13,6 +13,7 @@ import { initSettings, applyAppearance } from './settings.js';
 import { initLegacy } from './legacy.js';
 import { initStartupSound, playStartupSound } from './startup-sound.js';
 import { initWallpaper } from './wallpaper.js';
+import { initReminders } from './reminders.js';
 import { playAlarm, unlockAudio } from './audio.js';
 import { MODE_LABEL } from './format.js';
 
@@ -33,6 +34,7 @@ async function boot() {
   initLegacy();
   initStartupSound();
   initWallpaper();
+  initReminders();
   initNavigation();
 
   store.setSettings(settings);

@@ -265,14 +265,14 @@ function writePng(file, w, h) {
   await page.click('[data-nav="focus"]');
   assert.equal(await page.title(), 'Focus Neon');
   assert.equal(await app.evaluate(({ app: a }) => a.getName()), 'Focus Neon');
-  for (const p of ['focus', 'agenda', 'tasks', 'goals', 'dashboard', 'history', 'settings']) {
+  for (const p of ['focus', 'agenda', 'tasks', 'goals', 'dashboard', 'reminders', 'history', 'settings']) {
     await page.click(`.rail [data-nav="${p}"]`);
     await page.locator('.credit').scrollIntoViewIfNeeded();
     assert.ok(await page.isVisible('.credit'), `footer on ${p}`);
     assert.equal((await page.textContent('.credit')).trim(), 'Designed by Angell Belger');
   }
   assert.equal(await page.locator('.credit').count(), 1, 'footer is one shared element');
-  step('app is named Focus Neon; footer credit shows on all seven pages');
+  step('app is named Focus Neon; footer credit shows on all eight pages');
 
   // --- task steps
   await page.click('[data-nav="tasks"]');
@@ -845,6 +845,45 @@ function writePng(file, w, h) {
   await page.click('#ag-today');
   await waitFor(page, (y) => document.querySelector('#ag-year-title').textContent === `${y} so far`, lastYear + 1);
   await waitFor(page, (v) => parseInt(document.querySelector('#ag-year-tally .tally__row--ttp dd').textContent, 10) === v, base.yttp + 15);
+  // --- Dashboard tag filter: All tags by default, one tag, several tags, with the year selector and legacy hours
+  await page.click('[data-nav="dashboard"]');
+  await page.click('[data-dash-view="overview"]');
+  await page.click('[data-period="year"]');
+  const kpiValue = (i) => page.locator('#dash-kpis .kpi').nth(i).locator('.kpi__value').textContent();
+  const nowMs = Date.now();
+  const allYear = await page.evaluate((t) => window.pomodoro.stats.report('year', t), nowMs);
+  await waitFor(page, (v) => document.querySelector('#dash-kpis .kpi .kpi__value')?.textContent === String(v), allYear.summary.pomodoros);
+  assert.equal(await page.textContent('#dash-tags-label'), 'All tags', 'default: All tags');
+  assert.equal(await page.isVisible('#dash-filter-note'), false);
+  await page.click('#dash-tags-btn');
+  await page.locator('#dash-tags-menu .tag-filter__option', { hasText: 'English' }).locator('input').check();
+  const enYear = await page.evaluate(({ t, id }) => window.pomodoro.stats.report('year', t, [id]), { t: nowMs, id: english.id });
+  await waitFor(page, (v) => document.querySelector('#dash-kpis .kpi .kpi__value')?.textContent === String(v), enYear.summary.pomodoros);
+  assert.ok(enYear.summary.pomodoros < allYear.summary.pomodoros, 'English is a part of the total');
+  assert.equal(await page.textContent('#dash-tags-label'), 'English');
+  assert.equal(await page.getAttribute('#dash-tags-btn', 'data-active'), 'true');
+  assert.match(await page.textContent('#dash-filter-note'), /Showing only Pomodoros tagged English\./);
+  await page.locator('#dash-tags-menu .tag-filter__option', { hasText: 'Research' }).locator('input').check();
+  await waitFor(page, () => document.querySelector('#dash-tags-label').textContent === 'English + Research');
+  const both = await page.evaluate(({ t, ids }) => window.pomodoro.stats.report('year', t, ids), { t: nowMs, ids: [english.id, research.id] });
+  await waitFor(page, (v) => document.querySelector('#dash-kpis .kpi .kpi__value')?.textContent === String(v), both.summary.pomodoros);
+  await page.keyboard.press('Escape');
+  await waitFor(page, () => document.querySelector('#dash-tags-menu').hidden);
+  // previous year with the filter kept: only English legacy hours (5 h); the weekly TTP is explained, not counted
+  await page.selectOption('#dash-year', String(lastYear));
+  await waitFor(page, (y) => document.querySelector('#dash-range').textContent.includes(String(y)), lastYear);
+  await waitFor(page, () => document.querySelector('#dash-kpis .kpi:nth-child(2) .kpi__value')?.textContent.startsWith('5.0'));
+  assert.equal(await kpiValue(0), '0', 'no tracked English Pomodoros that year');
+  assert.match(await page.textContent('#dash-filter-note'), /English or Research\. Weekly TTP from legacy records \(40 Pomodoros\) has no tag, so it is only in All tags\./);
+  await shot(page, '17-dashboard-tag-filter');
+  await page.locator('#dash-filter-note button', { hasText: 'Show all tags' }).click();
+  await waitFor(page, () => document.querySelector('#dash-tags-label').textContent === 'All tags');
+  await waitFor(page, () => document.querySelector('#dash-kpis .kpi .kpi__value')?.textContent === '40');
+  assert.equal(await page.isVisible('#dash-filter-note'), false);
+  await page.click('#dash-today');
+  await page.click('[data-period="day"]');
+  step(`Dashboard tag filter: All tags (${allYear.summary.pomodoros}) -> English (${enYear.summary.pomodoros}) -> English + Research (${both.summary.pomodoros}); ${lastYear} keeps the filter (English legacy 5 h, untagged weekly TTP explained); back to All tags (40)`);
+
   await page.evaluate((ids) => Promise.all(ids.map((id) => window.pomodoro.legacy.remove(id))), oldIds);
   step(`previous year ${lastYear}: Dashboard year list + arrows reach it (40 Pomodoros, 5 h, March), Agenda "${lastYear} in total" = 40P / English 5 h; current planner back to "so far"`);
 
@@ -984,12 +1023,110 @@ function writePng(file, w, h) {
   assert.equal((await mainBg()).on, false);
   step('wallpaper removed: Focus back to normal, stored copy deleted, original kept');
 
+  // --- Reminders: sidebar entry above History, one-time events with links, annual occasions in the Agenda
+  const railOrder = await page.locator('.rail__list [data-nav]').evaluateAll((els) => els.map((e) => e.dataset.nav));
+  assert.equal(railOrder.indexOf('reminders') + 1, railOrder.indexOf('history'), 'Reminders sits right above History');
+  await page.keyboard.press('Control+6');
+  await page.waitForSelector('.page--reminders:not([hidden])');
+  await page.keyboard.press('Control+7');
+  await page.waitForSelector('.page--history:not([hidden])');
+  await page.click('[data-nav="reminders"]');
+  assert.equal(await page.isVisible('#rem-upcoming-empty'), true);
+  await app.evaluate(({ shell }) => { global.__opened = []; shell.openExternal = async (u) => { global.__opened.push(u); }; });
+  const newOnce = async ({ title, date, time = '', link = '', notes = '' }) => {
+    await page.click('#rem-new');
+    await page.waitForSelector('#rem-editor[open]');
+    await page.fill('#rem-form [name="title"]', title);
+    await page.fill('#rem-form [name="date"]', date);
+    if (time) await page.fill('#rem-form [name="time"]', time);
+    if (link) await page.fill('#rem-form [name="link"]', link);
+    if (notes) await page.fill('#rem-form [name="notes"]', notes);
+    await page.click('#rem-save');
+    await waitFor(page, () => !document.querySelector('#rem-editor').open);
+  };
+  await newOnce({ title: 'Project meeting', date: tomorrowKey, time: '14:30', link: 'meet.google.com/abc-defg-hij', notes: 'Bring the slides' });
+  await newOnce({ title: 'Dentist', date: addDaysKey(todayKey, -1) });
+  await newOnce({ title: 'Grant deadline', date: addDaysKey(todayKey, 20) });
+  // a missing title is refused in the window
+  await page.click('#rem-new');
+  await page.click('#rem-save');
+  assert.match(await page.textContent('#rem-error'), /title/);
+  await page.click('#rem-cancel');
+  assert.deepEqual(await page.locator('#rem-upcoming .rem-title > span:first-child').allTextContents(), ['Project meeting', 'Grant deadline'], 'upcoming, by date');
+  assert.deepEqual(await page.locator('#rem-past .rem-title > span:first-child').allTextContents(), ['Dentist']);
+  const meeting = page.locator('#rem-upcoming .rem-item', { hasText: 'Project meeting' });
+  assert.match(await meeting.locator('.rem-meta').textContent(), /14:30.*Tomorrow/);
+  await meeting.locator('.rem-link').click();
+  await waitFor(page, () => true);
+  assert.deepEqual(await app.evaluate(() => global.__opened), ['https://meet.google.com/abc-defg-hij'], 'the link opens in the browser');
+  // done -> Completed; edit keeps the same record
+  await page.locator('#rem-past .rem-item', { hasText: 'Dentist' }).locator('.rem-done input').click();
+  await waitFor(page, () => document.querySelector('#rem-done .rem-title')?.textContent.includes('Dentist'));
+  await meeting.locator('.rem-actions button[title="Edit"]').click();
+  await page.fill('#rem-form [name="title"]', 'Project meeting with the team');
+  await page.click('#rem-save');
+  await waitFor(page, () => document.querySelector('#rem-upcoming .rem-title span').textContent === 'Project meeting with the team');
+  assert.equal((await page.evaluate(() => window.pomodoro.reminders.overview())).once.length, 3, 'no duplicate after editing');
+  step('Reminders: above History (Ctrl+6), one-time events sorted, past/completed separated, meeting link opens in the browser, edit in place');
+
+  // annual: the Every-year tab, and the Agenda on their dates in any year
+  await page.click('[data-rem-view="annual"]');
+  const newAnnual = async (title, day, month) => {
+    await page.click('#rem-new');
+    await page.waitForSelector('#rem-editor[open]');
+    assert.equal(await page.getAttribute('[data-rem-kind="annual"]', 'aria-checked'), 'true', 'new reminders follow the open tab');
+    await page.fill('#rem-form [name="title"]', title);
+    await page.selectOption('#rem-form [name="month"]', String(month));
+    await page.selectOption('#rem-form [name="day"]', String(day));
+    await page.click('#rem-save');
+    await waitFor(page, () => !document.querySelector('#rem-editor').open);
+  };
+  const [ty, tm, td] = todayKey.split('-').map(Number);
+  await newAnnual("Mother's Birthday", 15, 3);
+  await newAnnual('Wedding Anniversary', 22, 9);
+  await newAnnual('Family celebration', td, tm);
+  await newAnnual("New Year's Eve party", 31, 12);
+  await waitFor(page, () => document.querySelectorAll('#rem-months .rem-item').length === 4);
+  assert.equal(await page.textContent('#rem-next-list .rem-next__item .rem-next__title'), 'Family celebration', 'today comes first');
+  assert.equal(await page.textContent('#rem-next-list .rem-next__item .rem-next__when'), 'Today');
+  await page.click('[data-nav="agenda"]');
+  await page.click('#ag-today');
+  const todayRem = page.locator(`.ag-day[data-date="${todayKey}"] .ag-day__body > .ag-reminders`);
+  await todayRem.waitFor();
+  assert.equal(await todayRem.locator('.ag-reminder__title').textContent(), 'Family celebration');
+  assert.equal(await page.locator(`.ag-day[data-date="${todayKey}"] .ag-day__body`).evaluate((b) => b.lastElementChild.classList.contains('ag-reminders')), true, 'the last lines of the day');
+  assert.equal(await page.locator(`.ag-day[data-date="${todayKey}"] .ag-reminder`, { hasText: 'Project meeting' }).count(), 0, 'one-time reminders stay in Reminders');
+  // another year: the 2024 planner opens on the week holding 31 December
+  await page.locator('#ag-years .planner', { hasText: '2024' }).first().click();
+  await page.waitForSelector('.ag-day[data-date="2024-12-31"] .ag-reminder');
+  assert.equal(await page.textContent('.ag-day[data-date="2024-12-31"] .ag-reminder__title'), "New Year's Eve party");
+  assert.equal(await page.locator('.ag-reminder').count(), 1);
+  const reminderColor = await page.locator('.ag-reminder').first().evaluate((el) => getComputedStyle(el).color);
+  assert.equal(reminderColor, 'rgb(255, 211, 110)', 'gold, unlike tasks and notes');
+  await shot(page, '18-agenda-annual-reminder');
+  const far = await page.evaluate(() => window.pomodoro.agenda.days('2031-03-10', 7));
+  assert.deepEqual(far.days.find((d) => d.date === '2031-03-15').reminders.map((r) => r.title), ["Mother's Birthday"]);
+  // deleting removes it from every year
+  await page.click('[data-nav="reminders"]');
+  await page.locator('#rem-months .rem-item', { hasText: "New Year's Eve party" }).locator('.rem-del').click();
+  await page.click('#confirm-ok');
+  await waitFor(page, () => document.querySelectorAll('#rem-months .rem-item').length === 3);
+  await page.click('[data-nav="agenda"]');
+  await page.locator('#ag-years .planner', { hasText: '2024' }).first().click();
+  await page.waitForSelector('.ag-day[data-date="2024-12-31"]');
+  await waitFor(page, () => !document.querySelector('.ag-day[data-date="2024-12-31"] .ag-reminder'));
+  await page.click('#ag-today');
+  await shot(page, '19-reminders');
+  step(`Annual reminders: 4 added (today's first in "Coming up"), shown last in their Agenda day this year, in 2024 and in 2031; deleted one gone from every year`);
+
   // everything persists after a restart
   await app.close();
   ({ app, page } = await launch());
   await page.click('[data-nav="agenda"]');
   await waitFor(page, (k) => document.querySelector(`.ag-day[data-date="${k}"] .ag-note__text`)?.textContent.endsWith('Fireworks!'), todayKey);
   assert.equal((await page.evaluate(() => window.pomodoro.legacy.list())).map((r) => `${r.kind}:${r.value}`).join(), 'pomodoros:15', 'legacy record persists');
+  const remAfter = await page.evaluate(() => window.pomodoro.reminders.overview());
+  assert.deepEqual([remAfter.once.length, remAfter.annual.length], [3, 3], 'reminders persist');
   await page.click('[data-nav="goals"]');
   await page.waitForSelector('.goal >> text=Complete my research project');
   // delete the note

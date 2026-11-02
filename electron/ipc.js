@@ -130,6 +130,26 @@ function registerIpc(svc, { getWindow, dbPath, onSettingsChanged, startupInfo })
   handle('notes:save', (_e, date, body) => { const n = notesRepo.save(date, body); dataChanged(); return n; });
   handle('notes:delete', (_e, date) => { const ok = notesRepo.delete(date); dataChanged(); return ok; });
 
+  // ---- reminders (one-time events, annual occasions)
+  const { cleanLink } = require('../core/database/repositories/reminders-repository');
+  handle('reminders:overview', () => svc.reminderOverview());
+  handle('reminders:save', (_e, r = {}) => {
+    const saved = svc.remindersRepo.save({
+      id: r.id, kind: r.kind, title: r.title, notes: r.notes, date: r.date, time: r.time, link: r.link, month: r.month, day: r.day,
+    });
+    dataChanged(); // the Agenda shows annual reminders
+    return saved;
+  });
+  handle('reminders:done', (_e, id, done) => { const r = svc.remindersRepo.setDone(id, done === true); dataChanged(); return r; });
+  handle('reminders:delete', (_e, id) => { const ok = svc.remindersRepo.delete(id); dataChanged(); return ok; });
+  // Opens a reminder's meeting link in the default browser (web links only).
+  handle('reminders:openLink', async (_e, id) => {
+    const r = svc.remindersRepo.get(id);
+    if (!r || !r.link) throw new Error('This reminder has no link.');
+    await shell.openExternal(cleanLink(r.link));
+    return true;
+  });
+
   // ---- startup sound (playlist) & Focus wallpaper
   // Files are picked with the system dialog here, copied into the media folder
   // by core/media-store.js, and referenced from SQLite (media_files).
@@ -230,9 +250,9 @@ function registerIpc(svc, { getWindow, dbPath, onSettingsChanged, startupInfo })
   handle('steps:delete', (_e, stepId) => stepsRepo.delete(stepId));
 
   // ---- stats & history
-  handle('stats:report', (_e, period, anchor) => {
+  handle('stats:report', (_e, period, anchor, tagIds) => {
     if (!PERIODS.includes(period)) throw new Error('Unknown period.');
-    return svc.report({ period, anchor });
+    return svc.report({ period, anchor, tagIds: Array.isArray(tagIds) ? tagIds.slice(0, 50) : null });
   });
   handle('stats:today', () => svc.today());
   handle('history:list', (_e, f = {}) => {

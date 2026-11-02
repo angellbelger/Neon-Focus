@@ -55,6 +55,13 @@ contextBridge.exposeInMainWorld('pomodoro', {
     update: (id, tag) => call('tags:update', id, tag),
     remove: (id) => call('tags:delete', id),
   },
+  reminders: {
+    overview: () => call('reminders:overview'),
+    save: (reminder) => call('reminders:save', reminder),
+    setDone: (id, done) => call('reminders:done', id, done),
+    remove: (id) => call('reminders:delete', id),
+    openLink: (id) => call('reminders:openLink', id),
+  },
   startupSound: {
     list: () => call('startup:list'),
     add: () => call('startup:add'),
@@ -102,7 +109,7 @@ contextBridge.exposeInMainWorld('pomodoro', {
     removeMilestone: (id) => call('milestones:delete', id),
   },
   stats: {
-    report: (period, anchor) => call('stats:report', period, anchor),
+    report: (period, anchor, tagIds) => call('stats:report', period, anchor, tagIds),
     today: () => call('stats:today'),
   },
   history: {

@@ -8,8 +8,10 @@ import { duration, durationParts, periodLabel, bucketLabel, dateShort, dateLong,
 import { renderLineChart } from './charts.js';
 import { registerPage, currentPage } from './navigation.js';
 import { initActivity, activityVisible, refreshActivity } from './activity.js';
+import { loadTags } from './tags.js';
 
-const state = { period: 'day', anchor: Date.now(), compare: 'focus', report: null, loading: 0 };
+// tagIds: [] = All tags (the general statistics); otherwise only sessions with one of these tags.
+const state = { period: 'day', anchor: Date.now(), compare: 'focus', report: null, loading: 0, tagIds: [], tags: [] };
 
 const PREV_NAME = {
   day: [ 'yesterday', 'the previous day' ],
@@ -222,6 +224,88 @@ function renderLegacyNote(r) {
   el.hidden = false;
 }
 
+// ------------------------------------------------------------------ tag filter
+
+function filterNames() {
+  const byId = new Map(state.tags.map((t) => [t.id, t]));
+  return state.tagIds.map((id) => byId.get(id)).filter(Boolean);
+}
+
+function renderTagButton() {
+  const sel = filterNames();
+  const btn = $('#dash-tags-btn');
+  btn.dataset.active = String(sel.length > 0);
+  $('#dash-tags-label').textContent = !sel.length ? 'All tags'
+    : sel.length <= 2 ? sel.map((t) => t.name).join(' + ') : `${sel[0].name} +${sel.length - 1}`;
+  $('#dash-tags-dots').replaceChildren(...sel.slice(0, 3).map((t) => h(`span.tag-filter__dot.tag--${t.color}`)));
+  btn.setAttribute('aria-label', sel.length ? `Tag filter: ${sel.map((t) => t.name).join(', ')}` : 'Tag filter: all tags');
+}
+
+function renderTagMenu() {
+  const menu = $('#dash-tags-menu');
+  const chosen = new Set(state.tagIds);
+  menu.replaceChildren(
+    h('label.tag-filter__option.tag-filter__option--all', {},
+      h('input', { type: 'checkbox', checked: chosen.size === 0, 'data-tag-id': 'all', onchange: () => setTagFilter([]) }),
+      h('span', {}, 'All tags'),
+      h('small', {}, 'general statistics')),
+    state.tags.length
+      ? h('div.tag-filter__list', {}, state.tags.map((t) => h('label.tag-filter__option', {},
+        h('input', {
+          type: 'checkbox', checked: chosen.has(t.id), 'data-tag-id': String(t.id),
+          onchange: (e) => setTagFilter(e.target.checked ? [...state.tagIds, t.id] : state.tagIds.filter((id) => id !== t.id)),
+        }),
+        h(`span.tag.tag--${t.color}`, {}, t.name))))
+      : h('p.tag-filter__empty', {}, 'No tags yet. Create them in Tasks → Manage tags.'),
+    h('p.tag-filter__hint', {}, 'Tick several tags to see them combined. A Pomodoro with two of them counts once.'));
+}
+
+function setTagFilter(ids) {
+  const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.tagId : null;
+  state.tagIds = [...new Set(ids)];
+  renderTagButton();
+  renderTagMenu();
+  // keep the keyboard on the option just changed (the list was rebuilt)
+  if (focused) $(`#dash-tags-menu input[data-tag-id="${focused}"]`)?.focus();
+  load();
+}
+
+function openTagMenu(open) {
+  const menu = $('#dash-tags-menu');
+  const willOpen = open ?? menu.hidden;
+  menu.hidden = !willOpen;
+  $('#dash-tags-btn').setAttribute('aria-expanded', String(willOpen));
+  if (willOpen) {
+    renderTagMenu();
+    loadTags(true).then((tags) => { state.tags = tags; renderTagMenu(); renderTagButton(); }).catch(() => {});
+    menu.querySelector('input')?.focus();
+  }
+}
+
+async function refreshTags() {
+  try { state.tags = await loadTags(true); } catch (_) { return; }
+  // a deleted tag simply leaves the selection
+  const known = new Set(state.tags.map((t) => t.id));
+  const kept = state.tagIds.filter((id) => known.has(id));
+  if (kept.length !== state.tagIds.length) { state.tagIds = kept; load(); }
+  renderTagButton();
+  if (!$('#dash-tags-menu').hidden) renderTagMenu();
+}
+
+/** "Showing Pomodoros tagged …" line, and what a tag view leaves out. */
+function renderFilterNote(r) {
+  const el = $('#dash-filter-note');
+  if (!r.filter) { el.hidden = true; return; }
+  const parts = [
+    h('span.tag-filter__dots', { 'aria-hidden': 'true' }, r.filter.tags.slice(0, 3).map((t) => h(`span.tag-filter__dot.tag--${t.color}`))),
+    `Showing only Pomodoros tagged ${r.filter.tags.map((t) => t.name).join(' or ')}.`,
+  ];
+  if (r.legacyUntagged) parts.push(` Weekly TTP from legacy records (${plural(r.legacyUntagged, 'Pomodoro')}) has no tag, so it is only in All tags.`);
+  parts.push(h('button.btn.btn--small.btn--ghost', { type: 'button', onclick: () => setTagFilter([]) }, 'Show all tags'));
+  el.replaceChildren(...parts);
+  el.hidden = false;
+}
+
 function render() {
   const r = state.report;
   if (!r) return;
@@ -239,9 +323,10 @@ function render() {
   $('#dash-body').hidden = empty;
   if (empty) {
     const unit = UNIT_NAME[r.period];
+    const tagged = r.filter ? `${r.filter.tags.map((t) => t.name).join(' or ')} ` : '';
     $('#dash-empty-title').textContent = r.isCurrent
-      ? (r.period === 'day' ? 'No sessions yet today' : `No sessions yet this ${unit}`)
-      : `No sessions in this ${unit}`;
+      ? (r.period === 'day' ? `No ${tagged}sessions yet today` : `No ${tagged}sessions yet this ${unit}`)
+      : `No ${tagged}sessions in this ${unit}`;
     $('#dash-empty-text').textContent = first
       ? (r.period === 'day'
         ? 'Statistics appear here as soon as you finish or stop a session. Legacy data is weekly, so it shows in the Week, Month and Year views. Use the arrows or the year list to look at other periods.'
@@ -250,6 +335,7 @@ function render() {
     return;
   }
   renderKpis(r);
+  renderFilterNote(r);
   renderLegacyNote(r);
   renderCharts(r);
 }
@@ -257,7 +343,7 @@ function render() {
 async function load() {
   const ticket = ++state.loading;
   try {
-    const r = await api.stats.report(state.period, state.anchor);
+    const r = await api.stats.report(state.period, state.anchor, state.tagIds.length ? state.tagIds : null);
     if (ticket !== state.loading) return; // a newer request is in flight
     state.report = r;
     render();
@@ -285,8 +371,19 @@ export function initDashboard() {
   $('#dash-today').addEventListener('click', () => { state.anchor = Date.now(); load(); });
   $('#dash-year').addEventListener('change', (e) => { state.anchor = anchorInYear(Number(e.target.value)); load(); });
 
+  // tag filter (default: All tags)
+  $('#dash-tags-btn').addEventListener('click', () => openTagMenu());
+  document.addEventListener('pointerdown', (e) => {
+    if (!$('#dash-tags-menu').hidden && !$('#dash-tag-filter').contains(e.target)) openTagMenu(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('#dash-tags-menu').hidden) { e.stopPropagation(); openTagMenu(false); $('#dash-tags-btn').focus(); }
+  });
+  renderTagButton();
+  refreshTags();
+
   initActivity({ onOverview: load });
   registerPage('dashboard', { onShow: () => (activityVisible() ? refreshActivity() : load()) });
-  api.data.onChanged(() => { if (currentPage() === 'dashboard' && !activityVisible()) load(); });
+  api.data.onChanged(() => { refreshTags(); if (currentPage() === 'dashboard' && !activityVisible()) load(); });
   store.on('settings', () => { if (currentPage() === 'dashboard') load(); });
 }
